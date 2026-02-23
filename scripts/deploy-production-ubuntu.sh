@@ -186,20 +186,30 @@ ensure_helper_scripts_executable() {
 }
 
 ensure_redis_service() {
-  local unit_name=""
-
-  if systemctl list-unit-files --type=service --no-legend --no-pager | awk '{print $1}' | grep -qx "redis-server.service"; then
-    unit_name="redis-server"
-  elif systemctl list-unit-files --type=service --no-legend --no-pager | awk '{print $1}' | grep -qx "redis.service"; then
-    unit_name="redis"
+  if [[ ! -d /run/systemd/system ]]; then
+    fail "systemd is not running on this host. Cannot enable Redis service with systemctl."
   fi
 
-  if [[ -z "$unit_name" ]]; then
-    fail "Redis systemd unit not found after package install. Check 'apt install redis-server' output."
+  local candidate
+  for candidate in redis-server redis redis-server.service redis.service; do
+    systemctl unmask "$candidate" >/dev/null 2>&1 || true
+    if systemctl enable --now "$candidate" >/dev/null 2>&1; then
+      log "Enabled Redis service (${candidate})"
+      return
+    fi
+  done
+
+  local discovered_units
+  discovered_units="$(ls /etc/systemd/system/redis*.service /lib/systemd/system/redis*.service /usr/lib/systemd/system/redis*.service 2>/dev/null || true)"
+
+  if [[ -n "$discovered_units" ]]; then
+    echo "Detected Redis-related systemd unit files:" >&2
+    echo "$discovered_units" >&2
+  else
+    echo "No Redis-related unit files found under /etc/systemd/system, /lib/systemd/system, or /usr/lib/systemd/system." >&2
   fi
 
-  log "Enabling Redis service (${unit_name})"
-  systemctl enable --now "$unit_name"
+  fail "Could not enable Redis service. Try: systemctl daemon-reload && systemctl list-unit-files | grep -i redis"
 }
 
 write_env_file() {
