@@ -1,6 +1,10 @@
+const crypto = require("crypto");
 const path = require("path");
 const express = require("express");
 const session = require("express-session");
+const { RedisStore } = require("connect-redis");
+const { createClient } = require("redis");
+const rateLimit = require("express-rate-limit");
 const bcrypt = require("bcryptjs");
 const helmet = require("helmet");
 const multer = require("multer");
@@ -14,6 +18,9 @@ const {
   getUserById,
   listUsers,
   deleteUser,
+  getLoginSecurityRecord,
+  upsertLoginSecurityRecord,
+  clearLoginSecurityRecord,
   createNiggun,
   listNiggunim,
   getNiggunById,
@@ -43,28 +50,101 @@ initializeSchema();
 
 const app = express();
 const projectRoot = __dirname;
+const isProduction = process.env.NODE_ENV === "production";
+
+function parseTrustProxySetting(rawValue) {
+  if (rawValue === undefined || rawValue === null || rawValue === "") {
+    return null;
+  }
+
+  if (rawValue === "true") {
+    return true;
+  }
+
+  if (rawValue === "false") {
+    return false;
+  }
+
+  if (/^\d+$/.test(rawValue)) {
+    return Number(rawValue);
+  }
+
+  return rawValue;
+}
+
+const explicitTrustProxy = parseTrustProxySetting(process.env.TRUST_PROXY);
+if (explicitTrustProxy !== null) {
+  app.set("trust proxy", explicitTrustProxy);
+} else if (isProduction) {
+  // Cloudflare -> Nginx -> Node
+  app.set("trust proxy", 1);
+}
 
 app.set("view engine", "ejs");
 app.set("views", path.join(projectRoot, "views"));
 
+const cspDirectives = {
+  defaultSrc: ["'self'"],
+  baseUri: ["'self'"],
+  connectSrc: ["'self'"],
+  fontSrc: ["'self'", "https://fonts.gstatic.com"],
+  formAction: ["'self'"],
+  frameAncestors: ["'none'"],
+  imgSrc: ["'self'", "data:", "https:"],
+  mediaSrc: ["'self'", "data:", "blob:"],
+  objectSrc: ["'none'"],
+  scriptSrc: ["'self'"],
+  styleSrc: ["'self'", "https://fonts.googleapis.com"]
+};
+
+if (isProduction) {
+  cspDirectives.upgradeInsecureRequests = [];
+}
+
 app.use(
   helmet({
-    contentSecurityPolicy: false
+    contentSecurityPolicy: {
+      directives: cspDirectives
+    },
+    hsts: isProduction
+      ? {
+          maxAge: 15552000,
+          includeSubDomains: true,
+          preload: false
+        }
+      : false,
+    referrerPolicy: {
+      policy: "no-referrer"
+    }
   })
 );
 app.use(morgan("dev"));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(projectRoot, "public")));
 app.use("/media", express.static(audioDirectory));
+
+const redisUrl = process.env.REDIS_URL || "redis://127.0.0.1:6379";
+const redisClient = createClient({ url: redisUrl });
+redisClient.on("error", (error) => {
+  console.error("Redis session store error:", error);
+});
+
+const sessionStore = new RedisStore({
+  client: redisClient,
+  prefix: `${process.env.SESSION_PREFIX || "segulah-niggun-database"}:sess:`
+});
+
 app.use(
   session({
+    store: sessionStore,
     secret: process.env.SESSION_SECRET || "dev-session-secret-change-me",
     resave: false,
     saveUninitialized: false,
+    proxy: isProduction,
     cookie: {
       httpOnly: true,
       sameSite: "lax",
-      secure: false,
+      secure: isProduction,
       maxAge: 1000 * 60 * 60 * 12
     }
   })
@@ -74,9 +154,65 @@ function setFlash(req, type, message) {
   req.session.flash = { type, message };
 }
 
+function ensureCsrfToken(req) {
+  if (!req.session.csrfToken) {
+    req.session.csrfToken = crypto.randomBytes(32).toString("hex");
+  }
+
+  return req.session.csrfToken;
+}
+
+function tokensMatch(submittedToken, expectedToken) {
+  if (typeof submittedToken !== "string" || typeof expectedToken !== "string") {
+    return false;
+  }
+
+  const submittedBuffer = Buffer.from(submittedToken);
+  const expectedBuffer = Buffer.from(expectedToken);
+
+  if (submittedBuffer.length === 0 || submittedBuffer.length !== expectedBuffer.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(submittedBuffer, expectedBuffer);
+}
+
+function getCsrfFailureRedirect(req) {
+  if (req.path.startsWith("/admin/login")) {
+    return "/admin/login";
+  }
+
+  if (req.path.startsWith("/admin/setup")) {
+    return "/admin/setup";
+  }
+
+  return "/admin";
+}
+
+function requireCsrfToken(req, res, next) {
+  const submittedToken =
+    (req.body && typeof req.body._csrf === "string" ? req.body._csrf : "") ||
+    req.get("x-csrf-token") ||
+    "";
+  const expectedToken = req.session.csrfToken || "";
+
+  if (!tokensMatch(submittedToken, expectedToken)) {
+    if (req.file && req.file.filename) {
+      removeAudioFile(req.file.filename);
+    }
+
+    setFlash(req, "error", "Security token is invalid or expired. Please retry.");
+    return res.status(403).redirect(getCsrfFailureRedirect(req));
+  }
+
+  return next();
+}
+
 app.use((req, res, next) => {
   res.locals.flash = req.session.flash || null;
   delete req.session.flash;
+
+  res.locals.csrfToken = ensureCsrfToken(req);
 
   if (req.session.userId) {
     const user = getUserById(req.session.userId);
@@ -91,6 +227,126 @@ app.use((req, res, next) => {
   }
 
   next();
+});
+
+function toPositiveInt(rawValue, fallback) {
+  const parsed = Number.parseInt(rawValue, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return parsed;
+}
+
+const LOGIN_FAILURE_LIMIT = toPositiveInt(process.env.LOGIN_FAILURE_LIMIT, 5);
+const LOGIN_FAILURE_WINDOW_MS = toPositiveInt(process.env.LOGIN_FAILURE_WINDOW_MINUTES, 15) * 60 * 1000;
+const LOGIN_LOCKOUT_MS = toPositiveInt(process.env.LOGIN_LOCKOUT_MINUTES, 15) * 60 * 1000;
+const LOGIN_RATE_LIMIT_MAX = toPositiveInt(process.env.LOGIN_RATE_LIMIT_MAX, 20);
+
+function getClientIp(req) {
+  return sanitizeText(String(req.ip || req.socket.remoteAddress || "")).toLowerCase();
+}
+
+function millisecondsUntil(isoDate) {
+  if (!isoDate) {
+    return 0;
+  }
+
+  const parsed = Date.parse(isoDate);
+  if (!Number.isFinite(parsed)) {
+    return 0;
+  }
+
+  return parsed - Date.now();
+}
+
+function formatLockWait(milliseconds) {
+  const minutes = Math.max(1, Math.ceil(milliseconds / 60000));
+  return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+}
+
+function getActiveLockout(keyType, keyValue) {
+  if (!keyValue) {
+    return null;
+  }
+
+  const record = getLoginSecurityRecord(keyType, keyValue);
+  if (!record || !record.lockedUntil) {
+    return null;
+  }
+
+  const msRemaining = millisecondsUntil(record.lockedUntil);
+  if (msRemaining <= 0) {
+    clearLoginSecurityRecord(keyType, keyValue);
+    return null;
+  }
+
+  return {
+    msRemaining
+  };
+}
+
+function recordLoginFailure(keyType, keyValue) {
+  if (!keyValue) {
+    return null;
+  }
+
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  const existing = getLoginSecurityRecord(keyType, keyValue);
+
+  let failedCount = 1;
+  let firstFailedAt = nowIso;
+  let lockedUntil = null;
+
+  if (existing) {
+    const firstFailedMs = Date.parse(existing.firstFailedAt || nowIso);
+    const withinWindow = Number.isFinite(firstFailedMs) && nowMs - firstFailedMs <= LOGIN_FAILURE_WINDOW_MS;
+
+    if (withinWindow) {
+      failedCount = existing.failedCount + 1;
+      firstFailedAt = existing.firstFailedAt || nowIso;
+    }
+  }
+
+  if (failedCount >= LOGIN_FAILURE_LIMIT) {
+    lockedUntil = new Date(nowMs + LOGIN_LOCKOUT_MS).toISOString();
+  }
+
+  upsertLoginSecurityRecord({
+    keyType,
+    keyValue,
+    failedCount,
+    firstFailedAt,
+    lockedUntil
+  });
+
+  return {
+    failedCount,
+    lockedUntil
+  };
+}
+
+function clearLoginFailures(usernameKey, clientIpKey) {
+  if (usernameKey) {
+    clearLoginSecurityRecord("username", usernameKey);
+  }
+
+  if (clientIpKey) {
+    clearLoginSecurityRecord("ip", clientIpKey);
+  }
+}
+
+const loginRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: LOGIN_RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  handler: (req, res) => {
+    setFlash(req, "error", "Too many login attempts from this IP. Please try again later.");
+    return res.status(429).redirect("/admin/login");
+  }
 });
 
 const upload = multer({
@@ -191,7 +447,7 @@ app.get("/admin/setup", (req, res) => {
   return res.render("admin/setup");
 });
 
-app.post("/admin/setup", (req, res) => {
+app.post("/admin/setup", requireCsrfToken, (req, res) => {
   if (countUsers() > 0) {
     return res.redirect("/admin/login");
   }
@@ -213,9 +469,19 @@ app.post("/admin/setup", (req, res) => {
 
   try {
     const userId = createUser(username, passwordHash);
-    req.session.userId = Number(userId);
-    setFlash(req, "success", "Admin user created.");
-    return res.redirect("/admin");
+
+    return req.session.regenerate((error) => {
+      if (error) {
+        console.error(error);
+        setFlash(req, "error", "Unable to complete setup session.");
+        return res.redirect("/admin/login");
+      }
+
+      req.session.userId = Number(userId);
+      req.session.csrfToken = crypto.randomBytes(32).toString("hex");
+      setFlash(req, "success", "Admin user created.");
+      return res.redirect("/admin");
+    });
   } catch (error) {
     setFlash(req, "error", "Unable to create admin user.");
     return res.redirect("/admin/setup");
@@ -234,7 +500,7 @@ app.get("/admin/login", (req, res) => {
   return res.render("admin/login");
 });
 
-app.post("/admin/login", (req, res) => {
+app.post("/admin/login", loginRateLimiter, requireCsrfToken, (req, res) => {
   if (countUsers() === 0) {
     return res.redirect("/admin/setup");
   }
@@ -242,19 +508,55 @@ app.post("/admin/login", (req, res) => {
   const username = sanitizeText(req.body.username || "");
   const password = req.body.password || "";
 
-  const user = getUserByUsername(username);
+  const usernameKey = username.toLowerCase();
+  const clientIpKey = getClientIp(req);
 
-  if (!user || !bcrypt.compareSync(password, user.passwordHash)) {
-    setFlash(req, "error", "Invalid username or password.");
+  const usernameLock = getActiveLockout("username", usernameKey);
+  const ipLock = getActiveLockout("ip", clientIpKey);
+  const msRemaining = Math.max(usernameLock?.msRemaining || 0, ipLock?.msRemaining || 0);
+
+  if (msRemaining > 0) {
+    setFlash(req, "error", `Too many failed sign-in attempts. Try again in ${formatLockWait(msRemaining)}.`);
     return res.redirect("/admin/login");
   }
 
-  req.session.userId = user.id;
-  setFlash(req, "success", "Signed in.");
-  return res.redirect("/admin");
+  const user = getUserByUsername(username);
+
+  if (!user || !bcrypt.compareSync(password, user.passwordHash)) {
+    const usernameFailure = recordLoginFailure("username", usernameKey);
+    const ipFailure = recordLoginFailure("ip", clientIpKey);
+
+    const lockMs = Math.max(
+      millisecondsUntil(usernameFailure ? usernameFailure.lockedUntil : null),
+      millisecondsUntil(ipFailure ? ipFailure.lockedUntil : null)
+    );
+
+    if (lockMs > 0) {
+      setFlash(req, "error", `Too many failed sign-in attempts. Try again in ${formatLockWait(lockMs)}.`);
+    } else {
+      setFlash(req, "error", "Invalid username or password.");
+    }
+
+    return res.redirect("/admin/login");
+  }
+
+  clearLoginFailures(usernameKey, clientIpKey);
+
+  return req.session.regenerate((error) => {
+    if (error) {
+      console.error(error);
+      setFlash(req, "error", "Unable to establish authenticated session.");
+      return res.redirect("/admin/login");
+    }
+
+    req.session.userId = user.id;
+    req.session.csrfToken = crypto.randomBytes(32).toString("hex");
+    setFlash(req, "success", "Signed in.");
+    return res.redirect("/admin");
+  });
 });
 
-app.post("/admin/logout", (req, res) => {
+app.post("/admin/logout", requireCsrfToken, (req, res) => {
   req.session.destroy(() => {
     res.redirect("/admin/login");
   });
@@ -272,7 +574,7 @@ app.get("/admin", requireAuth, (req, res) => {
   });
 });
 
-app.post("/admin/users", requireAuth, (req, res) => {
+app.post("/admin/users", requireAuth, requireCsrfToken, (req, res) => {
   const username = sanitizeText(req.body.username || "");
   const password = req.body.password || "";
 
@@ -298,7 +600,7 @@ app.post("/admin/users", requireAuth, (req, res) => {
   return res.redirect("/admin");
 });
 
-app.post("/admin/users/:id/delete", requireAuth, (req, res) => {
+app.post("/admin/users/:id/delete", requireAuth, requireCsrfToken, (req, res) => {
   const userId = Number(req.params.id);
 
   if (!Number.isInteger(userId) || userId <= 0) {
@@ -343,7 +645,7 @@ function uploadMiddleware(req, res, next) {
   });
 }
 
-app.post("/admin/niggunim", requireAuth, uploadMiddleware, async (req, res) => {
+app.post("/admin/niggunim", requireAuth, uploadMiddleware, requireCsrfToken, async (req, res) => {
   const title = sanitizeText(req.body.title || "");
   const notes = sanitizeText(req.body.notes || "");
   const tempo = sanitizeText(req.body.tempo || "");
@@ -465,7 +767,7 @@ app.post("/admin/niggunim", requireAuth, uploadMiddleware, async (req, res) => {
   }
 });
 
-app.post("/admin/niggunim/:id/delete", requireAuth, (req, res) => {
+app.post("/admin/niggunim/:id/delete", requireAuth, requireCsrfToken, (req, res) => {
   const niggunId = Number(req.params.id);
 
   if (!Number.isInteger(niggunId) || niggunId <= 0) {
@@ -499,7 +801,18 @@ app.use((error, req, res, next) => {
   return res.status(500).send("Internal server error");
 });
 
-const PORT = Number(process.env.PORT || 3000);
-app.listen(PORT, () => {
-  console.log(`Segulah Niggun database listening on port ${PORT}`);
-});
+async function startServer() {
+  try {
+    await redisClient.connect();
+
+    const port = Number(process.env.PORT || 3000);
+    app.listen(port, () => {
+      console.log(`Segulah Niggun database listening on port ${port}`);
+    });
+  } catch (error) {
+    console.error("Failed to connect to Redis session store.", error);
+    process.exit(1);
+  }
+}
+
+startServer();

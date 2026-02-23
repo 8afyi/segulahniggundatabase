@@ -64,10 +64,21 @@ function initializeSchema() {
       FOREIGN KEY (author_id) REFERENCES authors(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS login_security (
+      key_type TEXT NOT NULL,
+      key_value TEXT NOT NULL,
+      failed_count INTEGER NOT NULL DEFAULT 0,
+      first_failed_at TEXT,
+      locked_until TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (key_type, key_value)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_niggunim_tempo ON niggunim(tempo);
     CREATE INDEX IF NOT EXISTS idx_niggunim_key ON niggunim(musical_key);
     CREATE INDEX IF NOT EXISTS idx_niggun_singers_singer ON niggun_singers(singer_id);
     CREATE INDEX IF NOT EXISTS idx_niggun_authors_author ON niggun_authors(author_id);
+    CREATE INDEX IF NOT EXISTS idx_login_security_locked_until ON login_security(locked_until);
   `);
 }
 
@@ -155,6 +166,58 @@ function listUsers() {
 
 function deleteUser(userId) {
   return db.prepare("DELETE FROM users WHERE id = ?").run(userId).changes;
+}
+
+function getLoginSecurityRecord(keyType, keyValue) {
+  return (
+    db
+      .prepare(
+        `SELECT
+          key_type AS keyType,
+          key_value AS keyValue,
+          failed_count AS failedCount,
+          first_failed_at AS firstFailedAt,
+          locked_until AS lockedUntil
+         FROM login_security
+         WHERE key_type = ?
+           AND key_value = ?`
+      )
+      .get(keyType, keyValue) || null
+  );
+}
+
+function upsertLoginSecurityRecord(payload) {
+  db.prepare(
+    `INSERT INTO login_security (
+      key_type,
+      key_value,
+      failed_count,
+      first_failed_at,
+      locked_until,
+      updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(key_type, key_value)
+    DO UPDATE SET
+      failed_count = excluded.failed_count,
+      first_failed_at = excluded.first_failed_at,
+      locked_until = excluded.locked_until,
+      updated_at = datetime('now')`
+  ).run(
+    payload.keyType,
+    payload.keyValue,
+    payload.failedCount,
+    payload.firstFailedAt || null,
+    payload.lockedUntil || null
+  );
+}
+
+function clearLoginSecurityRecord(keyType, keyValue) {
+  db.prepare(
+    `DELETE FROM login_security
+     WHERE key_type = ?
+       AND key_value = ?`
+  ).run(keyType, keyValue);
 }
 
 function getOrCreateSingerId(name) {
@@ -414,6 +477,9 @@ module.exports = {
   getUserById,
   listUsers,
   deleteUser,
+  getLoginSecurityRecord,
+  upsertLoginSecurityRecord,
+  clearLoginSecurityRecord,
   createNiggun,
   listNiggunim,
   getNiggunById,

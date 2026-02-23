@@ -10,6 +10,7 @@ BRANCH="main"
 DOMAIN=""
 LETSENCRYPT_EMAIL=""
 PORT="3000"
+REDIS_URL="redis://127.0.0.1:6379"
 ENABLE_UFW="1"
 SKIP_CERTBOT="0"
 
@@ -22,6 +23,7 @@ Usage:
     [--domain example.com] \
     [--email admin@example.com] \
     [--port 3000] \
+    [--redis-url redis://127.0.0.1:6379] \
     [--app-name segulah-niggun-database] \
     [--app-user segulah] \
     [--app-dir /srv/segulah-niggun-database] \
@@ -74,6 +76,10 @@ parse_args() {
         PORT="${2:-}"
         shift 2
         ;;
+      --redis-url)
+        REDIS_URL="${2:-}"
+        shift 2
+        ;;
       --app-name)
         APP_NAME="${2:-}"
         shift 2
@@ -108,6 +114,7 @@ parse_args() {
   [[ -n "$REPO_URL" ]] || fail "--repo-url is required"
   [[ -n "$BRANCH" ]] || fail "--branch cannot be empty"
   [[ "$PORT" =~ ^[0-9]+$ ]] || fail "--port must be numeric"
+  [[ -n "$REDIS_URL" ]] || fail "--redis-url cannot be empty"
 
   if [[ -n "$LETSENCRYPT_EMAIL" && -z "$DOMAIN" ]]; then
     fail "--email requires --domain"
@@ -173,6 +180,10 @@ ensure_runtime_dirs() {
   install -d -m 0755 -o "$APP_USER" -g "$APP_GROUP" "$APP_DIR/uploads/audio"
 }
 
+ensure_redis_service() {
+  systemctl enable --now redis-server
+}
+
 write_env_file() {
   local env_file="/etc/${APP_NAME}.env"
   local session_secret=""
@@ -190,6 +201,12 @@ NODE_ENV=production
 PORT=${PORT}
 SESSION_SECRET=${session_secret}
 DB_PATH=${APP_DIR}/data/app.db
+REDIS_URL=${REDIS_URL}
+TRUST_PROXY=1
+LOGIN_FAILURE_LIMIT=5
+LOGIN_FAILURE_WINDOW_MINUTES=15
+LOGIN_LOCKOUT_MINUTES=15
+LOGIN_RATE_LIMIT_MAX=20
 ENV
 
   chmod 0600 "$env_file"
@@ -201,7 +218,7 @@ write_systemd_service() {
   cat > "$service_file" <<SERVICE
 [Unit]
 Description=Segulah Niggun Database
-After=network-online.target
+After=network-online.target redis-server.service
 Wants=network-online.target
 
 [Service]
@@ -305,13 +322,14 @@ main() {
 
   log "Installing base packages"
   apt-get update
-  apt_install ca-certificates curl gnupg git nginx openssl ufw
+  apt_install ca-certificates curl gnupg git nginx openssl redis-server ufw
 
   install_nodejs
   ensure_app_user
   checkout_or_update_repo
   install_node_deps
   ensure_runtime_dirs
+  ensure_redis_service
   write_env_file
   write_systemd_service
   write_nginx_config

@@ -6,7 +6,7 @@ MVP web application for a public niggun catalog with an admin panel.
 - Frontend: server-rendered EJS templates + vanilla CSS/JS
 - Backend: Node.js + Express
 - Database: SQLite (`better-sqlite3`)
-- Auth: session cookie auth (`express-session`)
+- Auth: session cookie auth (`express-session` + Redis store)
 
 Why this stack for MVP:
 - Fast to build and deploy on Ubuntu
@@ -21,6 +21,9 @@ Why this stack for MVP:
 - Admin user management (add/remove users)
 - Niggun management (add/remove)
 - Audio input via upload or URL (downloaded and stored server-side)
+- Redis-backed sessions (no in-memory session store)
+- CSRF protection for admin POST actions
+- Login hardening: IP rate limiting + temporary lockout after repeated failures
 - Upload constraints:
   - max file size `20MB`
   - only browser-playable audio types
@@ -40,11 +43,15 @@ Why this stack for MVP:
    ```bash
    cp .env.example .env
    ```
-3. Start server:
+3. Start Redis (required for sessions):
+   ```bash
+   sudo systemctl start redis-server
+   ```
+4. Start server:
    ```bash
    npm start
    ```
-4. Open:
+5. Open:
    - Public site: `http://localhost:3000`
    - First-run admin setup: `http://localhost:3000/admin/setup`
 
@@ -58,6 +65,7 @@ sudo ./scripts/deploy-production-ubuntu.sh \
   --branch main \
   --domain niggun.example.com \
   --email admin@example.com \
+  --redis-url redis://127.0.0.1:6379 \
   --port 3000
 ```
 
@@ -66,6 +74,7 @@ Example (no domain/TLS yet):
 sudo ./scripts/deploy-production-ubuntu.sh \
   --repo-url git@github.com:YOUR_ORG/YOUR_REPO.git \
   --branch main \
+  --redis-url redis://127.0.0.1:6379 \
   --port 3000 \
   --skip-certbot
 ```
@@ -74,6 +83,7 @@ What the script does:
 - Installs system packages (`git`, `nginx`, `ufw`, Node.js 20, etc.)
 - Creates an app user and deploys code to `/srv/segulah-niggun-database`
 - Installs production Node dependencies
+- Installs and enables local `redis-server`
 - Creates runtime dirs for DB and uploaded audio
 - Writes `/etc/segulah-niggun-database.env` (preserves existing `SESSION_SECRET` on reruns)
 - Configures and starts a `systemd` service
@@ -85,8 +95,9 @@ Update deploy:
 
 ## Production notes (Ubuntu)
 - Set a strong `SESSION_SECRET`
+- Keep Redis local-only (`127.0.0.1`) unless you intentionally externalize it
 - Run behind Nginx/Caddy with TLS
-- Replace the default in-memory session store with Redis or a DB-backed store
+- For Cloudflare, use Full (strict) TLS mode and keep `TRUST_PROXY=1`
 - Back up:
   - `data/app.db`
   - `uploads/audio/`

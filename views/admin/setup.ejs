@@ -28,6 +28,7 @@
           <%- include('../partials/flash', { flash: flash }) %>
 
           <form method="post" action="/admin/setup" class="stack-form">
+            <%- include('../partials/csrf-field', { csrfToken: csrfToken }) %>
             <label>
               Username
               <input type="text" name="username" required minlength="3" maxlength="32" autocomplete="username" />

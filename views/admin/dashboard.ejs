@@ -16,6 +16,7 @@
               <img src="/assets/segulah-wide.jpg" alt="Segulah" class="brand-logo" />
             </a>
             <form method="post" action="/admin/logout">
+              <%- include('../partials/csrf-field', { csrfToken: csrfToken }) %>
               <button type="submit" class="button-secondary">Sign out</button>
             </form>
           </div>
@@ -29,6 +30,7 @@
         <section class="panel panel-soft" id="niggunim">
           <h2>Add Niggun</h2>
           <form method="post" action="/admin/niggunim" enctype="multipart/form-data" class="stack-form">
+            <%- include('../partials/csrf-field', { csrfToken: csrfToken }) %>
             <label>
               Title (required)
               <input type="text" name="title" required />
@@ -113,6 +115,7 @@
                       <td><%= niggun.createdAt %></td>
                       <td>
                         <form method="post" action="/admin/niggunim/<%= niggun.id %>/delete" data-confirm="Delete this niggun? This cannot be undone.">
+                          <%- include('../partials/csrf-field', { csrfToken: csrfToken }) %>
                           <button type="submit" class="button-danger">Delete</button>
                         </form>
                       </td>
@@ -128,6 +131,7 @@
           <h2>User Management</h2>
 
           <form method="post" action="/admin/users" class="stack-form compact-form">
+            <%- include('../partials/csrf-field', { csrfToken: csrfToken }) %>
             <label>
               New username
               <input type="text" name="username" required minlength="3" maxlength="32" />
@@ -160,6 +164,7 @@
                         <span class="muted">Current user</span>
                       <% } else { %>
                         <form method="post" action="/admin/users/<%= user.id %>/delete" data-confirm="Delete this user?">
+                          <%- include('../partials/csrf-field', { csrfToken: csrfToken }) %>
                           <button type="submit" class="button-danger">Delete</button>
                         </form>
                       <% } %>
