@@ -71,6 +71,49 @@
               </select>
             </label>
 
+            <label>
+              Sort
+              <select name="sort">
+                <% for (const option of sortOptions) { %>
+                  <option value="<%= option.value %>" <%= sortKey === option.value ? 'selected' : '' %>><%= option.label %></option>
+                <% } %>
+              </select>
+            </label>
+
+            <fieldset class="checkbox-fieldset">
+              <legend>Occasion Tags</legend>
+              <div class="checkbox-group">
+                <% for (const occasion of occasionOptions) { %>
+                  <label class="checkbox-item">
+                    <input
+                      type="checkbox"
+                      name="occasions"
+                      value="<%= occasion %>"
+                      <%= filters.occasions.includes(occasion) ? 'checked' : '' %>
+                    />
+                    <span><%= occasion %></span>
+                  </label>
+                <% } %>
+              </div>
+            </fieldset>
+
+            <fieldset class="checkbox-fieldset">
+              <legend>Prayer Tags</legend>
+              <div class="checkbox-group">
+                <% for (const prayerTime of prayerTimeOptions) { %>
+                  <label class="checkbox-item">
+                    <input
+                      type="checkbox"
+                      name="prayerTimes"
+                      value="<%= prayerTime %>"
+                      <%= filters.prayerTimes.includes(prayerTime) ? 'checked' : '' %>
+                    />
+                    <span><%= prayerTime %></span>
+                  </label>
+                <% } %>
+              </div>
+            </fieldset>
+
             <div class="filter-actions">
               <button type="submit">Apply Filters</button>
               <a href="/" class="button-secondary">Clear</a>
@@ -79,7 +122,13 @@
         </section>
 
         <section>
-          <h2>Results (<%= niggunim.length %>)</h2>
+          <h2>Results (<%= pagination.totalCount %>)</h2>
+
+          <% if (pagination.totalCount > 0) { %>
+            <% const pageStart = pagination.offset + 1; %>
+            <% const pageEnd = pagination.offset + niggunim.length; %>
+            <p class="muted">Showing <%= pageStart %>-<%= pageEnd %> of <%= pagination.totalCount %> (page <%= pagination.page %> of <%= pagination.totalPages %>)</p>
+          <% } %>
 
           <% if (niggunim.length === 0) { %>
             <div class="panel">
@@ -93,6 +142,30 @@
                   <h3><a href="/niggunim/<%= niggun.id %>"><%= niggun.title %></a></h3>
                   <p><strong>Singers:</strong> <%= niggun.singers.join(', ') %></p>
                   <p><strong>Authors:</strong> <%= niggun.authors.join(', ') %></p>
+                  <div class="tag-row">
+                    <strong>Occasion Tags:</strong>
+                    <% if (niggun.occasions.length) { %>
+                      <div class="tag-list">
+                        <% for (const tag of niggun.occasions) { %>
+                          <span class="tag-chip"><%= tag %></span>
+                        <% } %>
+                      </div>
+                    <% } else { %>
+                      <span>N/A</span>
+                    <% } %>
+                  </div>
+                  <div class="tag-row">
+                    <strong>Prayer Tags:</strong>
+                    <% if (niggun.prayerTimes.length) { %>
+                      <div class="tag-list">
+                        <% for (const tag of niggun.prayerTimes) { %>
+                          <span class="tag-chip"><%= tag %></span>
+                        <% } %>
+                      </div>
+                    <% } else { %>
+                      <span>N/A</span>
+                    <% } %>
+                  </div>
                   <p><strong>Tempo:</strong> <%= niggun.tempo || 'N/A' %></p>
                   <p><strong>Key:</strong> <%= niggun.musicalKey || 'N/A' %></p>
                   <% if (notesPreview) { %>
@@ -102,6 +175,20 @@
                 </article>
               <% } %>
             </div>
+          <% } %>
+
+          <% if (pagination.totalPages > 1) { %>
+            <nav class="pagination" aria-label="Result pages">
+              <% if (pagination.hasPrevious) { %>
+                <a href="<%= buildPublicUrl(pagination.previousPage) %>" class="button-secondary">Previous</a>
+              <% } %>
+
+              <span class="pagination-status">Page <%= pagination.page %> of <%= pagination.totalPages %></span>
+
+              <% if (pagination.hasNext) { %>
+                <a href="<%= buildPublicUrl(pagination.nextPage) %>" class="button-secondary">Next</a>
+              <% } %>
+            </nav>
           <% } %>
         </section>
       </main>

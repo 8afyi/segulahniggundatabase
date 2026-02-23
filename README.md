@@ -16,10 +16,14 @@ Why this stack for MVP:
 ## Features
 - Public catalog open to everyone (no login)
 - Search by title/notes and filter by tempo/key/singer/author
+- Additional tag filters:
+  - Occasion tags: Weekday, Shabbat, Festivals, Rosh Chodesh, High Holidays
+  - Prayer tags: Shacharit, Musaf, Minchah, Maariv
+- Public/admin list sorting and pagination
 - Niggun detail card with built-in audio player
 - Admin auth with first-run setup flow
 - Admin user management (add/remove users)
-- Niggun management (add/remove)
+- Niggun management (add/edit/remove)
 - Audio input via upload or URL (downloaded and stored server-side)
 - Redis-backed sessions (no in-memory session store)
 - CSRF protection for admin POST actions
@@ -33,6 +37,8 @@ Why this stack for MVP:
 - `niggunim`
 - `singers` + `niggun_singers` (many-to-many)
 - `authors` + `niggun_authors` (many-to-many)
+- `occasions` + `niggun_occasions` (many-to-many)
+- `prayer_times` + `niggun_prayer_times` (many-to-many)
 
 ## Run locally
 1. Install dependencies:
@@ -43,15 +49,18 @@ Why this stack for MVP:
    ```bash
    cp .env.example .env
    ```
-3. Start Redis (required for sessions):
+3. Session store choice:
+   - local default is `SESSION_STORE=memory` (no Redis required)
+   - if you want Redis-backed sessions locally, set `SESSION_STORE=redis`
+4. Optional: start Redis for local parity with production:
    ```bash
    sudo systemctl start redis-server
    ```
-4. Start server:
+5. Start server:
    ```bash
    npm start
    ```
-5. Open:
+6. Open:
    - Public site: `http://localhost:3000`
    - First-run admin setup: `http://localhost:3000/admin/setup`
 
@@ -80,18 +89,40 @@ sudo ./scripts/deploy-production-ubuntu.sh \
 ```
 
 What the script does:
-- Installs system packages (`git`, `nginx`, `ufw`, Node.js 20, etc.)
+- Installs system packages (`git`, `nginx`, `ufw`, `sqlite3`, `rsync`, Node.js 20, etc.)
 - Creates an app user and deploys code to `/srv/segulah-niggun-database`
 - Installs production Node dependencies
 - Installs and enables local `redis-server`
 - Creates runtime dirs for DB and uploaded audio
 - Writes `/etc/segulah-niggun-database.env` (preserves existing `SESSION_SECRET` on reruns)
 - Configures and starts a `systemd` service
+- Configures a daily backup timer (`systemd`) writing to `/var/backups/segulah-niggun-database/`
 - Configures Nginx reverse proxy with `client_max_body_size 20M`
 - Optionally provisions Let’s Encrypt certs when `--domain` and `--email` are provided
 
 Update deploy:
 - Re-run the same deploy command; it will pull latest code from the configured branch and restart the service.
+
+## Backup and restore
+Manual backup:
+```bash
+sudo ./scripts/backup-data.sh \
+  --app-name segulah-niggun-database \
+  --app-dir /srv/segulah-niggun-database \
+  --env-file /etc/segulah-niggun-database.env
+```
+
+Manual restore:
+```bash
+sudo ./scripts/restore-data.sh \
+  --archive /var/backups/segulah-niggun-database/segulah-niggun-database-YYYYMMDDTHHMMSSZ.tar.gz
+```
+
+Backup timer commands:
+```bash
+sudo systemctl status segulah-niggun-database-backup.timer
+sudo systemctl list-timers | grep segulah-niggun-database-backup
+```
 
 ## Production notes (Ubuntu)
 - Set a strong `SESSION_SECRET`

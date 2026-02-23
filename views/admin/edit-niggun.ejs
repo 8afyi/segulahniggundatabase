@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Edit Niggun | Segulah Niggun Database</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="site-shell">
+      <header class="site-header">
+        <div class="wrap">
+          <div class="brand-row">
+            <a href="/" class="brand-link" aria-label="Segulah Niggun Database home">
+              <img src="/assets/segulah-wide.jpg" alt="Segulah" class="brand-logo" />
+            </a>
+            <a href="<%= returnTo %>" class="button-secondary">Back to Admin</a>
+          </div>
+          <p class="admin-meta">Edit niggun and optionally replace audio.</p>
+        </div>
+      </header>
+
+      <main class="wrap shell-main">
+        <%- include('../partials/flash', { flash: flash }) %>
+
+        <section class="panel panel-soft">
+          <h2>Edit Niggun</h2>
+
+          <form method="post" action="/admin/niggunim/<%= niggun.id %>" enctype="multipart/form-data" class="stack-form">
+            <%- include('../partials/csrf-field', { csrfToken: csrfToken }) %>
+            <input type="hidden" name="returnTo" value="<%= returnTo %>" />
+
+            <label>
+              Title (required)
+              <input type="text" name="title" value="<%= niggun.title %>" required />
+            </label>
+
+            <label>
+              Singer(s) (required, comma-separated)
+              <input
+                type="text"
+                name="singers"
+                value="<%= niggun.singers.join(', ') %>"
+                required
+                placeholder="Singer One, Singer Two"
+              />
+            </label>
+
+            <label>
+              Author(s) (required, comma-separated)
+              <input
+                type="text"
+                name="authors"
+                value="<%= niggun.authors.join(', ') %>"
+                required
+                placeholder="Author One, Author Two"
+              />
+            </label>
+
+            <fieldset class="checkbox-fieldset">
+              <legend>Occasion Tags</legend>
+              <div class="checkbox-group">
+                <% for (const occasion of occasionOptions) { %>
+                  <label class="checkbox-item">
+                    <input
+                      type="checkbox"
+                      name="occasions"
+                      value="<%= occasion %>"
+                      <%= niggun.occasions.includes(occasion) ? 'checked' : '' %>
+                    />
+                    <span><%= occasion %></span>
+                  </label>
+                <% } %>
+              </div>
+            </fieldset>
+
+            <fieldset class="checkbox-fieldset">
+              <legend>Prayer Tags</legend>
+              <div class="checkbox-group">
+                <% for (const prayerTime of prayerTimeOptions) { %>
+                  <label class="checkbox-item">
+                    <input
+                      type="checkbox"
+                      name="prayerTimes"
+                      value="<%= prayerTime %>"
+                      <%= niggun.prayerTimes.includes(prayerTime) ? 'checked' : '' %>
+                    />
+                    <span><%= prayerTime %></span>
+                  </label>
+                <% } %>
+              </div>
+            </fieldset>
+
+            <label>
+              Tempo
+              <select name="tempo">
+                <option value="">Select tempo</option>
+                <% for (const tempo of tempoOptions) { %>
+                  <option value="<%= tempo %>" <%= niggun.tempo === tempo ? 'selected' : '' %>><%= tempo %></option>
+                <% } %>
+              </select>
+            </label>
+
+            <label>
+              Key
+              <select name="musicalKey">
+                <option value="">Select key</option>
+                <% for (const key of keyOptions) { %>
+                  <option value="<%= key %>" <%= niggun.musicalKey === key ? 'selected' : '' %>><%= key %></option>
+                <% } %>
+              </select>
+            </label>
+
+            <label>
+              Notes / Description
+              <textarea name="notes" rows="4" placeholder="Optional notes or description"><%= niggun.notes %></textarea>
+            </label>
+
+            <div class="panel">
+              <h3>Current Audio</h3>
+              <audio controls preload="metadata" src="/media/<%= niggun.audioPath %>"></audio>
+              <% if (niggun.originalFilename) { %>
+                <p><small>Source file: <%= niggun.originalFilename %></small></p>
+              <% } %>
+              <% if (niggun.audioSourceUrl) { %>
+                <p><small>Source URL: <%= niggun.audioSourceUrl %></small></p>
+              <% } %>
+            </div>
+
+            <label>
+              Replace audio with file upload (max 20MB)
+              <input type="file" name="audioFile" accept="audio/*" />
+            </label>
+
+            <label>
+              OR replace audio using URL (http/https)
+              <input type="url" name="audioUrl" placeholder="https://example.com/song.mp3" />
+            </label>
+
+            <p class="muted">Leave both audio fields blank to keep the current audio file.</p>
+
+            <div class="action-row">
+              <button type="submit">Update Niggun</button>
+              <a href="<%= returnTo %>" class="button-secondary">Cancel</a>
+            </div>
+          </form>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

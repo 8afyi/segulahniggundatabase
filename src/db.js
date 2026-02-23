@@ -48,6 +48,16 @@ function initializeSchema() {
       name TEXT NOT NULL UNIQUE COLLATE NOCASE
     );
 
+    CREATE TABLE IF NOT EXISTS occasions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE COLLATE NOCASE
+    );
+
+    CREATE TABLE IF NOT EXISTS prayer_times (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE COLLATE NOCASE
+    );
+
     CREATE TABLE IF NOT EXISTS niggun_singers (
       niggun_id INTEGER NOT NULL,
       singer_id INTEGER NOT NULL,
@@ -64,6 +74,22 @@ function initializeSchema() {
       FOREIGN KEY (author_id) REFERENCES authors(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS niggun_occasions (
+      niggun_id INTEGER NOT NULL,
+      occasion_id INTEGER NOT NULL,
+      PRIMARY KEY (niggun_id, occasion_id),
+      FOREIGN KEY (niggun_id) REFERENCES niggunim(id) ON DELETE CASCADE,
+      FOREIGN KEY (occasion_id) REFERENCES occasions(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS niggun_prayer_times (
+      niggun_id INTEGER NOT NULL,
+      prayer_time_id INTEGER NOT NULL,
+      PRIMARY KEY (niggun_id, prayer_time_id),
+      FOREIGN KEY (niggun_id) REFERENCES niggunim(id) ON DELETE CASCADE,
+      FOREIGN KEY (prayer_time_id) REFERENCES prayer_times(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS login_security (
       key_type TEXT NOT NULL,
       key_value TEXT NOT NULL,
@@ -78,6 +104,8 @@ function initializeSchema() {
     CREATE INDEX IF NOT EXISTS idx_niggunim_key ON niggunim(musical_key);
     CREATE INDEX IF NOT EXISTS idx_niggun_singers_singer ON niggun_singers(singer_id);
     CREATE INDEX IF NOT EXISTS idx_niggun_authors_author ON niggun_authors(author_id);
+    CREATE INDEX IF NOT EXISTS idx_niggun_occasions_occasion ON niggun_occasions(occasion_id);
+    CREATE INDEX IF NOT EXISTS idx_niggun_prayers_prayer_time ON niggun_prayer_times(prayer_time_id);
     CREATE INDEX IF NOT EXISTS idx_login_security_locked_until ON login_security(locked_until);
   `);
 }
@@ -110,7 +138,9 @@ function toNiggunRecord(row) {
     mimeType: row.mimeType || "",
     createdAt: row.createdAt,
     singers: splitCsv(row.singersCsv),
-    authors: splitCsv(row.authorsCsv)
+    authors: splitCsv(row.authorsCsv),
+    occasions: splitCsv(row.occasionsCsv),
+    prayerTimes: splitCsv(row.prayerTimesCsv)
   };
 }
 
@@ -240,6 +270,80 @@ function getOrCreateAuthorId(name) {
   return inserted.lastInsertRowid;
 }
 
+function getOrCreateOccasionId(name) {
+  const existing = db.prepare("SELECT id FROM occasions WHERE name = ? COLLATE NOCASE").get(name);
+  if (existing) {
+    return existing.id;
+  }
+
+  const inserted = db.prepare("INSERT INTO occasions (name) VALUES (?)").run(name);
+  return inserted.lastInsertRowid;
+}
+
+function getOrCreatePrayerTimeId(name) {
+  const existing = db.prepare("SELECT id FROM prayer_times WHERE name = ? COLLATE NOCASE").get(name);
+  if (existing) {
+    return existing.id;
+  }
+
+  const inserted = db.prepare("INSERT INTO prayer_times (name) VALUES (?)").run(name);
+  return inserted.lastInsertRowid;
+}
+
+function cleanupUnusedLookupTables() {
+  db.prepare(
+    `DELETE FROM singers
+     WHERE id NOT IN (SELECT singer_id FROM niggun_singers)`
+  ).run();
+  db.prepare(
+    `DELETE FROM authors
+     WHERE id NOT IN (SELECT author_id FROM niggun_authors)`
+  ).run();
+  db.prepare(
+    `DELETE FROM occasions
+     WHERE id NOT IN (SELECT occasion_id FROM niggun_occasions)`
+  ).run();
+  db.prepare(
+    `DELETE FROM prayer_times
+     WHERE id NOT IN (SELECT prayer_time_id FROM niggun_prayer_times)`
+  ).run();
+}
+
+function insertNiggunLinks(niggunId, payload) {
+  const insertSingerLink = db.prepare(
+    "INSERT INTO niggun_singers (niggun_id, singer_id) VALUES (?, ?)"
+  );
+  const insertAuthorLink = db.prepare(
+    "INSERT INTO niggun_authors (niggun_id, author_id) VALUES (?, ?)"
+  );
+  const insertOccasionLink = db.prepare(
+    "INSERT INTO niggun_occasions (niggun_id, occasion_id) VALUES (?, ?)"
+  );
+  const insertPrayerTimeLink = db.prepare(
+    "INSERT INTO niggun_prayer_times (niggun_id, prayer_time_id) VALUES (?, ?)"
+  );
+
+  for (const singerName of payload.singers) {
+    const singerId = getOrCreateSingerId(singerName);
+    insertSingerLink.run(niggunId, singerId);
+  }
+
+  for (const authorName of payload.authors) {
+    const authorId = getOrCreateAuthorId(authorName);
+    insertAuthorLink.run(niggunId, authorId);
+  }
+
+  for (const occasionName of payload.occasions || []) {
+    const occasionId = getOrCreateOccasionId(occasionName);
+    insertOccasionLink.run(niggunId, occasionId);
+  }
+
+  for (const prayerTimeName of payload.prayerTimes || []) {
+    const prayerTimeId = getOrCreatePrayerTimeId(prayerTimeName);
+    insertPrayerTimeLink.run(niggunId, prayerTimeId);
+  }
+}
+
 const createNiggunTxn = db.transaction((payload) => {
   const niggunResult = db
     .prepare(
@@ -267,23 +371,7 @@ const createNiggunTxn = db.transaction((payload) => {
     );
 
   const niggunId = niggunResult.lastInsertRowid;
-
-  const insertSingerLink = db.prepare(
-    "INSERT INTO niggun_singers (niggun_id, singer_id) VALUES (?, ?)"
-  );
-  const insertAuthorLink = db.prepare(
-    "INSERT INTO niggun_authors (niggun_id, author_id) VALUES (?, ?)"
-  );
-
-  for (const singerName of payload.singers) {
-    const singerId = getOrCreateSingerId(singerName);
-    insertSingerLink.run(niggunId, singerId);
-  }
-
-  for (const authorName of payload.authors) {
-    const authorId = getOrCreateAuthorId(authorName);
-    insertAuthorLink.run(niggunId, authorId);
-  }
+  insertNiggunLinks(niggunId, payload);
 
   return niggunId;
 });
@@ -292,7 +380,62 @@ function createNiggun(payload) {
   return createNiggunTxn(payload);
 }
 
-function listNiggunim(filters = {}) {
+const updateNiggunTxn = db.transaction((payload) => {
+  const existing = db
+    .prepare(
+      `SELECT id, audio_path AS audioPath
+       FROM niggunim
+       WHERE id = ?`
+    )
+    .get(payload.id);
+
+  if (!existing) {
+    return null;
+  }
+
+  db.prepare(
+    `UPDATE niggunim
+     SET title = ?,
+         notes = ?,
+         tempo = ?,
+         musical_key = ?,
+         audio_path = ?,
+         audio_source_url = ?,
+         original_filename = ?,
+         mime_type = ?
+     WHERE id = ?`
+  ).run(
+    payload.title,
+    payload.notes || null,
+    payload.tempo || null,
+    payload.musicalKey || null,
+    payload.audioPath,
+    payload.audioSourceUrl || null,
+    payload.originalFilename || null,
+    payload.mimeType || null,
+    payload.id
+  );
+
+  db.prepare("DELETE FROM niggun_singers WHERE niggun_id = ?").run(payload.id);
+  db.prepare("DELETE FROM niggun_authors WHERE niggun_id = ?").run(payload.id);
+  db.prepare("DELETE FROM niggun_occasions WHERE niggun_id = ?").run(payload.id);
+  db.prepare("DELETE FROM niggun_prayer_times WHERE niggun_id = ?").run(payload.id);
+
+  insertNiggunLinks(payload.id, payload);
+  cleanupUnusedLookupTables();
+
+  return {
+    id: payload.id,
+    previousAudioPath: existing.audioPath,
+    newAudioPath: payload.audioPath
+  };
+});
+
+function updateNiggun(payload) {
+  return updateNiggunTxn(payload);
+}
+
+function buildNiggunWhereClause(filters = {}) {
   const conditions = [];
   const params = [];
 
@@ -351,36 +494,106 @@ function listNiggunim(filters = {}) {
     params.push(filters.author);
   }
 
-  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  if (filters.occasions && filters.occasions.length > 0) {
+    const placeholders = filters.occasions.map(() => "?").join(",");
+    conditions.push(`EXISTS (
+      SELECT 1
+      FROM niggun_occasions no2
+      JOIN occasions o2 ON o2.id = no2.occasion_id
+      WHERE no2.niggun_id = n.id
+        AND o2.name IN (${placeholders})
+    )`);
+    params.push(...filters.occasions);
+  }
 
-  const rows = db
+  if (filters.prayerTimes && filters.prayerTimes.length > 0) {
+    const placeholders = filters.prayerTimes.map(() => "?").join(",");
+    conditions.push(`EXISTS (
+      SELECT 1
+      FROM niggun_prayer_times npt2
+      JOIN prayer_times pt2 ON pt2.id = npt2.prayer_time_id
+      WHERE npt2.niggun_id = n.id
+        AND pt2.name IN (${placeholders})
+    )`);
+    params.push(...filters.prayerTimes);
+  }
+
+  return {
+    whereClause: conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "",
+    params
+  };
+}
+
+function countNiggunim(filters = {}) {
+  const { whereClause, params } = buildNiggunWhereClause(filters);
+  const row = db
     .prepare(
-      `
-      SELECT
-        n.id,
-        n.title,
-        n.notes,
-        n.tempo,
-        n.musical_key AS musicalKey,
-        n.audio_path AS audioPath,
-        n.audio_source_url AS audioSourceUrl,
-        n.original_filename AS originalFilename,
-        n.mime_type AS mimeType,
-        n.created_at AS createdAt,
-        COALESCE(GROUP_CONCAT(DISTINCT s.name), '') AS singersCsv,
-        COALESCE(GROUP_CONCAT(DISTINCT a.name), '') AS authorsCsv
-      FROM niggunim n
-      LEFT JOIN niggun_singers ns ON ns.niggun_id = n.id
-      LEFT JOIN singers s ON s.id = ns.singer_id
-      LEFT JOIN niggun_authors na ON na.niggun_id = n.id
-      LEFT JOIN authors a ON a.id = na.author_id
-      ${whereClause}
-      GROUP BY n.id
-      ORDER BY n.created_at DESC, n.id DESC
-      `
+      `SELECT COUNT(*) AS count
+       FROM niggunim n
+       ${whereClause}`
     )
-    .all(...params);
+    .get(...params);
 
+  return row ? row.count : 0;
+}
+
+function resolveSortClause(sortKey) {
+  switch (sortKey) {
+    case "oldest":
+      return "n.created_at ASC, n.id ASC";
+    case "title_asc":
+      return "LOWER(n.title) ASC, n.id ASC";
+    case "title_desc":
+      return "LOWER(n.title) DESC, n.id DESC";
+    case "newest":
+    default:
+      return "n.created_at DESC, n.id DESC";
+  }
+}
+
+function listNiggunim(filters = {}, options = {}) {
+  const { whereClause, params } = buildNiggunWhereClause(filters);
+  const sortClause = resolveSortClause(options.sortKey || "newest");
+
+  const hasLimit = Number.isInteger(options.limit) && options.limit > 0;
+  const offset = Number.isInteger(options.offset) && options.offset >= 0 ? options.offset : 0;
+
+  let sql = `
+    SELECT
+      n.id,
+      n.title,
+      n.notes,
+      n.tempo,
+      n.musical_key AS musicalKey,
+      n.audio_path AS audioPath,
+      n.audio_source_url AS audioSourceUrl,
+      n.original_filename AS originalFilename,
+      n.mime_type AS mimeType,
+      n.created_at AS createdAt,
+      COALESCE(GROUP_CONCAT(DISTINCT s.name), '') AS singersCsv,
+      COALESCE(GROUP_CONCAT(DISTINCT a.name), '') AS authorsCsv,
+      COALESCE(GROUP_CONCAT(DISTINCT o.name), '') AS occasionsCsv,
+      COALESCE(GROUP_CONCAT(DISTINCT pt.name), '') AS prayerTimesCsv
+    FROM niggunim n
+    LEFT JOIN niggun_singers ns ON ns.niggun_id = n.id
+    LEFT JOIN singers s ON s.id = ns.singer_id
+    LEFT JOIN niggun_authors na ON na.niggun_id = n.id
+    LEFT JOIN authors a ON a.id = na.author_id
+    LEFT JOIN niggun_occasions no ON no.niggun_id = n.id
+    LEFT JOIN occasions o ON o.id = no.occasion_id
+    LEFT JOIN niggun_prayer_times npt ON npt.niggun_id = n.id
+    LEFT JOIN prayer_times pt ON pt.id = npt.prayer_time_id
+    ${whereClause}
+    GROUP BY n.id
+    ORDER BY ${sortClause}
+  `;
+
+  if (hasLimit) {
+    sql += " LIMIT ? OFFSET ?";
+    params.push(options.limit, offset);
+  }
+
+  const rows = db.prepare(sql).all(...params);
   return rows.map(toNiggunRecord);
 }
 
@@ -400,12 +613,18 @@ function getNiggunById(niggunId) {
         n.mime_type AS mimeType,
         n.created_at AS createdAt,
         COALESCE(GROUP_CONCAT(DISTINCT s.name), '') AS singersCsv,
-        COALESCE(GROUP_CONCAT(DISTINCT a.name), '') AS authorsCsv
+        COALESCE(GROUP_CONCAT(DISTINCT a.name), '') AS authorsCsv,
+        COALESCE(GROUP_CONCAT(DISTINCT o.name), '') AS occasionsCsv,
+        COALESCE(GROUP_CONCAT(DISTINCT pt.name), '') AS prayerTimesCsv
       FROM niggunim n
       LEFT JOIN niggun_singers ns ON ns.niggun_id = n.id
       LEFT JOIN singers s ON s.id = ns.singer_id
       LEFT JOIN niggun_authors na ON na.niggun_id = n.id
       LEFT JOIN authors a ON a.id = na.author_id
+      LEFT JOIN niggun_occasions no ON no.niggun_id = n.id
+      LEFT JOIN occasions o ON o.id = no.occasion_id
+      LEFT JOIN niggun_prayer_times npt ON npt.niggun_id = n.id
+      LEFT JOIN prayer_times pt ON pt.id = npt.prayer_time_id
       WHERE n.id = ?
       GROUP BY n.id
       `
@@ -451,14 +670,7 @@ const deleteNiggunTxn = db.transaction((niggunId) => {
   }
 
   db.prepare("DELETE FROM niggunim WHERE id = ?").run(niggunId);
-  db.prepare(
-    `DELETE FROM singers
-     WHERE id NOT IN (SELECT singer_id FROM niggun_singers)`
-  ).run();
-  db.prepare(
-    `DELETE FROM authors
-     WHERE id NOT IN (SELECT author_id FROM niggun_authors)`
-  ).run();
+  cleanupUnusedLookupTables();
 
   return existing;
 });
@@ -481,6 +693,8 @@ module.exports = {
   upsertLoginSecurityRecord,
   clearLoginSecurityRecord,
   createNiggun,
+  updateNiggun,
+  countNiggunim,
   listNiggunim,
   getNiggunById,
   listSingers,

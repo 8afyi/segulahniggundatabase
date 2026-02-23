@@ -28,6 +28,33 @@ function parseCsvInput(value) {
   return Array.from(dedup.values());
 }
 
+function parseMultiSelectInput(value, allowedValues = []) {
+  const allowedSet = new Set(allowedValues);
+  const rawList = Array.isArray(value) ? value : typeof value === "string" ? [value] : [];
+  const dedup = new Set();
+  const result = [];
+
+  for (const item of rawList) {
+    if (typeof item !== "string") {
+      continue;
+    }
+
+    const cleaned = item.trim();
+    if (!cleaned || dedup.has(cleaned)) {
+      continue;
+    }
+
+    if (allowedSet.size > 0 && !allowedSet.has(cleaned)) {
+      continue;
+    }
+
+    dedup.add(cleaned);
+    result.push(cleaned);
+  }
+
+  return result;
+}
+
 function ensureHttpUrl(value) {
   if (typeof value !== "string" || !value.trim()) {
     return null;
@@ -50,5 +77,6 @@ function ensureHttpUrl(value) {
 module.exports = {
   sanitizeText,
   parseCsvInput,
+  parseMultiSelectInput,
   ensureHttpUrl
 };

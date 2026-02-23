@@ -22,6 +22,8 @@ const {
   upsertLoginSecurityRecord,
   clearLoginSecurityRecord,
   createNiggun,
+  updateNiggun,
+  countNiggunim,
   listNiggunim,
   getNiggunById,
   listSingers,
@@ -32,10 +34,17 @@ const { requireAuth } = require("./src/middleware/auth");
 const {
   TEMPO_OPTIONS,
   MUSICAL_KEY_OPTIONS,
+  OCCASION_TAG_OPTIONS,
+  PRAYER_TIME_TAG_OPTIONS,
   MAX_AUDIO_BYTES,
   ALLOWED_AUDIO_EXTENSIONS
 } = require("./src/config/constants");
-const { sanitizeText, parseCsvInput, ensureHttpUrl } = require("./src/utils/validation");
+const {
+  sanitizeText,
+  parseCsvInput,
+  parseMultiSelectInput,
+  ensureHttpUrl
+} = require("./src/utils/validation");
 const {
   audioDirectory,
   getFileMetadata,
@@ -123,32 +132,53 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(projectRoot, "public")));
 app.use("/media", express.static(audioDirectory));
 
+const configuredSessionStore = sanitizeText(process.env.SESSION_STORE || "").toLowerCase();
+if (configuredSessionStore && configuredSessionStore !== "redis" && configuredSessionStore !== "memory") {
+  console.warn(`Unknown SESSION_STORE=\"${configuredSessionStore}\". Falling back to environment default.`);
+}
+
+const useRedisSessions =
+  configuredSessionStore === "redis"
+    ? true
+    : configuredSessionStore === "memory"
+      ? false
+      : isProduction;
 const redisUrl = process.env.REDIS_URL || "redis://127.0.0.1:6379";
-const redisClient = createClient({ url: redisUrl });
-redisClient.on("error", (error) => {
-  console.error("Redis session store error:", error);
-});
+let redisClient = null;
+let sessionStore = null;
 
-const sessionStore = new RedisStore({
-  client: redisClient,
-  prefix: `${process.env.SESSION_PREFIX || "segulah-niggun-database"}:sess:`
-});
+if (useRedisSessions) {
+  redisClient = createClient({ url: redisUrl });
+  redisClient.on("error", (error) => {
+    console.error("Redis session store error:", error);
+  });
 
-app.use(
-  session({
-    store: sessionStore,
-    secret: process.env.SESSION_SECRET || "dev-session-secret-change-me",
-    resave: false,
-    saveUninitialized: false,
-    proxy: isProduction,
-    cookie: {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: isProduction,
-      maxAge: 1000 * 60 * 60 * 12
-    }
-  })
-);
+  sessionStore = new RedisStore({
+    client: redisClient,
+    prefix: `${process.env.SESSION_PREFIX || "segulah-niggun-database"}:sess:`
+  });
+} else if (isProduction) {
+  console.warn("SESSION_STORE=memory is enabled in production. This is not recommended.");
+} else {
+  console.warn("Using in-memory session store for local development (SESSION_STORE=memory).");
+}
+
+const sessionOptions = {
+  secret: process.env.SESSION_SECRET || "dev-session-secret-change-me",
+  resave: false,
+  saveUninitialized: false,
+  proxy: isProduction,
+  cookie: {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: isProduction,
+    maxAge: 1000 * 60 * 60 * 12
+  }
+};
+if (sessionStore) {
+  sessionOptions.store = sessionStore;
+}
+app.use(session(sessionOptions));
 
 function setFlash(req, type, message) {
   req.session.flash = { type, message };
@@ -237,6 +267,17 @@ function toPositiveInt(rawValue, fallback) {
 
   return parsed;
 }
+
+const SORT_OPTIONS = [
+  { value: "newest", label: "Newest first" },
+  { value: "oldest", label: "Oldest first" },
+  { value: "title_asc", label: "Title (A-Z)" },
+  { value: "title_desc", label: "Title (Z-A)" }
+];
+const SORT_VALUES = new Set(SORT_OPTIONS.map((option) => option.value));
+const DEFAULT_SORT_KEY = "newest";
+const PUBLIC_PAGE_SIZE = Math.min(100, toPositiveInt(process.env.PUBLIC_PAGE_SIZE, 12));
+const ADMIN_PAGE_SIZE = Math.min(200, toPositiveInt(process.env.ADMIN_PAGE_SIZE, 25));
 
 const LOGIN_FAILURE_LIMIT = toPositiveInt(process.env.LOGIN_FAILURE_LIMIT, 5);
 const LOGIN_FAILURE_WINDOW_MS = toPositiveInt(process.env.LOGIN_FAILURE_WINDOW_MINUTES, 15) * 60 * 1000;
@@ -385,41 +426,162 @@ function validatePassword(password) {
   return typeof password === "string" && password.length >= 8;
 }
 
+function normalizeSortKey(rawSort) {
+  const normalized = sanitizeText(rawSort || "");
+  return SORT_VALUES.has(normalized) ? normalized : DEFAULT_SORT_KEY;
+}
+
+function normalizePage(rawPage) {
+  return toPositiveInt(rawPage, 1);
+}
+
+function buildQueryString(query) {
+  const params = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(query)) {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const cleaned = sanitizeText(item);
+        if (cleaned) {
+          params.append(key, cleaned);
+        }
+      }
+      continue;
+    }
+
+    const cleaned = sanitizeText(value == null ? "" : String(value));
+    if (cleaned) {
+      params.set(key, cleaned);
+    }
+  }
+
+  return params.toString();
+}
+
+function buildPagination(totalCount, requestedPage, pageSize) {
+  const safeTotal = Number.isInteger(totalCount) && totalCount > 0 ? totalCount : 0;
+  const totalPages = Math.max(1, Math.ceil(safeTotal / pageSize));
+  const page = Math.min(Math.max(requestedPage, 1), totalPages);
+
+  return {
+    page,
+    pageSize,
+    totalCount: safeTotal,
+    totalPages,
+    offset: (page - 1) * pageSize,
+    hasPrevious: page > 1,
+    hasNext: page < totalPages,
+    previousPage: page > 1 ? page - 1 : 1,
+    nextPage: page < totalPages ? page + 1 : totalPages
+  };
+}
+
+function toPathWithQuery(pathname, queryString) {
+  return queryString ? `${pathname}?${queryString}` : pathname;
+}
+
+function normalizeAdminReturnTo(rawReturnTo, fallback = "/admin") {
+  const cleaned = sanitizeText(rawReturnTo || "");
+  if (!cleaned) {
+    return fallback;
+  }
+
+  if (cleaned.startsWith("//")) {
+    return fallback;
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(cleaned, "http://localhost");
+  } catch (error) {
+    return fallback;
+  }
+
+  if (parsed.origin !== "http://localhost") {
+    return fallback;
+  }
+
+  if (!parsed.pathname.startsWith("/admin")) {
+    return fallback;
+  }
+
+  return `${parsed.pathname}${parsed.search}`;
+}
+
 function normalizeFilters(query) {
   const searchQuery = sanitizeText(query.q || "");
   const tempo = sanitizeText(query.tempo || "");
   const musicalKey = sanitizeText(query.key || "");
   const singer = sanitizeText(query.singer || "");
   const author = sanitizeText(query.author || "");
+  const occasions = parseMultiSelectInput(query.occasions, OCCASION_TAG_OPTIONS);
+  const prayerTimes = parseMultiSelectInput(query.prayerTimes, PRAYER_TIME_TAG_OPTIONS);
 
   return {
     searchQuery,
     tempo: TEMPO_OPTIONS.includes(tempo) ? tempo : "",
     musicalKey: MUSICAL_KEY_OPTIONS.includes(musicalKey) ? musicalKey : "",
     singer,
-    author
+    author,
+    occasions,
+    prayerTimes
   };
 }
 
 app.get("/", (req, res) => {
   const filters = normalizeFilters(req.query);
+  const sortKey = normalizeSortKey(req.query.sort);
+  const requestedPage = normalizePage(req.query.page);
 
-  const niggunim = listNiggunim({
+  const listFilters = {
     searchQuery: filters.searchQuery,
     tempo: filters.tempo,
     musicalKey: filters.musicalKey,
     singer: filters.singer,
-    author: filters.author
+    author: filters.author,
+    occasions: filters.occasions,
+    prayerTimes: filters.prayerTimes
+  };
+  const totalCount = countNiggunim(listFilters);
+  const pagination = buildPagination(totalCount, requestedPage, PUBLIC_PAGE_SIZE);
+
+  const niggunim = listNiggunim(listFilters, {
+    sortKey,
+    limit: PUBLIC_PAGE_SIZE,
+    offset: pagination.offset
   });
 
   const singers = listSingers();
   const authors = listAuthors();
+  const queryState = {
+    q: filters.searchQuery,
+    tempo: filters.tempo,
+    key: filters.musicalKey,
+    singer: filters.singer,
+    author: filters.author,
+    occasions: filters.occasions,
+    prayerTimes: filters.prayerTimes,
+    sort: sortKey
+  };
+  const buildPublicQuery = (pageNumber = pagination.page) =>
+    buildQueryString({
+      ...queryState,
+      page: pageNumber > 1 ? String(pageNumber) : ""
+    });
+  const buildPublicUrl = (pageNumber = pagination.page) => toPathWithQuery("/", buildPublicQuery(pageNumber));
 
   res.render("public/index", {
     niggunim,
     filters,
+    sortKey,
+    sortOptions: SORT_OPTIONS,
+    pagination,
+    buildPublicQuery,
+    buildPublicUrl,
     tempoOptions: TEMPO_OPTIONS,
     keyOptions: MUSICAL_KEY_OPTIONS,
+    occasionOptions: OCCASION_TAG_OPTIONS,
+    prayerTimeOptions: PRAYER_TIME_TAG_OPTIONS,
     singers,
     authors
   });
@@ -563,14 +725,41 @@ app.post("/admin/logout", requireCsrfToken, (req, res) => {
 });
 
 app.get("/admin", requireAuth, (req, res) => {
+  const sortKey = normalizeSortKey(req.query.sort);
+  const requestedPage = normalizePage(req.query.page);
+  const totalCount = countNiggunim({});
+  const pagination = buildPagination(totalCount, requestedPage, ADMIN_PAGE_SIZE);
+
   const users = listUsers();
-  const niggunim = listNiggunim({});
+  const niggunim = listNiggunim(
+    {},
+    {
+      sortKey,
+      limit: ADMIN_PAGE_SIZE,
+      offset: pagination.offset
+    }
+  );
+  const buildAdminQuery = (pageNumber = pagination.page) =>
+    buildQueryString({
+      sort: sortKey,
+      page: pageNumber > 1 ? String(pageNumber) : ""
+    });
+  const buildAdminUrl = (pageNumber = pagination.page) => toPathWithQuery("/admin", buildAdminQuery(pageNumber));
+  const adminReturnTo = toPathWithQuery("/admin", buildAdminQuery(pagination.page));
 
   return res.render("admin/dashboard", {
     users,
     niggunim,
+    sortKey,
+    sortOptions: SORT_OPTIONS,
+    pagination,
+    buildAdminQuery,
+    buildAdminUrl,
+    adminReturnTo,
     tempoOptions: TEMPO_OPTIONS,
-    keyOptions: MUSICAL_KEY_OPTIONS
+    keyOptions: MUSICAL_KEY_OPTIONS,
+    occasionOptions: OCCASION_TAG_OPTIONS,
+    prayerTimeOptions: PRAYER_TIME_TAG_OPTIONS
   });
 });
 
@@ -629,29 +818,43 @@ app.post("/admin/users/:id/delete", requireAuth, requireCsrfToken, (req, res) =>
   return res.redirect("/admin");
 });
 
-function uploadMiddleware(req, res, next) {
-  upload.single("audioFile")(req, res, (error) => {
-    if (error) {
-      if (error.code === "LIMIT_FILE_SIZE") {
-        setFlash(req, "error", "Audio file exceeds 20MB limit.");
-      } else {
-        setFlash(req, "error", error.message || "Upload failed.");
+function createUploadMiddleware(defaultRedirect) {
+  return (req, res, next) => {
+    upload.single("audioFile")(req, res, (error) => {
+      if (error) {
+        if (req.file && req.file.filename) {
+          removeAudioFile(req.file.filename);
+        }
+
+        if (error.code === "LIMIT_FILE_SIZE") {
+          setFlash(req, "error", "Audio file exceeds 20MB limit.");
+        } else {
+          setFlash(req, "error", error.message || "Upload failed.");
+        }
+
+        const fallback = typeof defaultRedirect === "function" ? defaultRedirect(req) : defaultRedirect;
+        const returnTo = normalizeAdminReturnTo(req.body?.returnTo, fallback);
+        return res.redirect(returnTo);
       }
 
-      return res.redirect("/admin");
-    }
-
-    return next();
-  });
+      return next();
+    });
+  };
 }
 
-app.post("/admin/niggunim", requireAuth, uploadMiddleware, requireCsrfToken, async (req, res) => {
+const uploadForCreate = createUploadMiddleware("/admin");
+const uploadForEdit = createUploadMiddleware((req) => `/admin/niggunim/${req.params.id}/edit`);
+
+app.post("/admin/niggunim", requireAuth, uploadForCreate, requireCsrfToken, async (req, res) => {
+  const returnTo = normalizeAdminReturnTo(req.body.returnTo, "/admin");
   const title = sanitizeText(req.body.title || "");
   const notes = sanitizeText(req.body.notes || "");
   const tempo = sanitizeText(req.body.tempo || "");
   const musicalKey = sanitizeText(req.body.musicalKey || "");
   const singers = parseCsvInput(req.body.singers || "");
   const authors = parseCsvInput(req.body.authors || "");
+  const occasions = parseMultiSelectInput(req.body.occasions, OCCASION_TAG_OPTIONS);
+  const prayerTimes = parseMultiSelectInput(req.body.prayerTimes, PRAYER_TIME_TAG_OPTIONS);
   const audioUrlRaw = sanitizeText(req.body.audioUrl || "");
   const audioUrl = ensureHttpUrl(audioUrlRaw);
 
@@ -662,7 +865,7 @@ app.post("/admin/niggunim", requireAuth, uploadMiddleware, requireCsrfToken, asy
       removeAudioFile(uploadedFile.filename);
     }
     setFlash(req, "error", "Title is required.");
-    return res.redirect("/admin");
+    return res.redirect(returnTo);
   }
 
   if (singers.length === 0) {
@@ -670,7 +873,7 @@ app.post("/admin/niggunim", requireAuth, uploadMiddleware, requireCsrfToken, asy
       removeAudioFile(uploadedFile.filename);
     }
     setFlash(req, "error", "At least one singer is required.");
-    return res.redirect("/admin");
+    return res.redirect(returnTo);
   }
 
   if (authors.length === 0) {
@@ -678,7 +881,7 @@ app.post("/admin/niggunim", requireAuth, uploadMiddleware, requireCsrfToken, asy
       removeAudioFile(uploadedFile.filename);
     }
     setFlash(req, "error", "At least one author is required.");
-    return res.redirect("/admin");
+    return res.redirect(returnTo);
   }
 
   if (tempo && !TEMPO_OPTIONS.includes(tempo)) {
@@ -686,7 +889,7 @@ app.post("/admin/niggunim", requireAuth, uploadMiddleware, requireCsrfToken, asy
       removeAudioFile(uploadedFile.filename);
     }
     setFlash(req, "error", "Tempo must be Fast, Medium, or Slow.");
-    return res.redirect("/admin");
+    return res.redirect(returnTo);
   }
 
   if (musicalKey && !MUSICAL_KEY_OPTIONS.includes(musicalKey)) {
@@ -694,23 +897,23 @@ app.post("/admin/niggunim", requireAuth, uploadMiddleware, requireCsrfToken, asy
       removeAudioFile(uploadedFile.filename);
     }
     setFlash(req, "error", "Please choose a valid musical key.");
-    return res.redirect("/admin");
+    return res.redirect(returnTo);
   }
 
   if (uploadedFile && audioUrl) {
     removeAudioFile(uploadedFile.filename);
     setFlash(req, "error", "Choose either file upload or audio URL, not both.");
-    return res.redirect("/admin");
+    return res.redirect(returnTo);
   }
 
   if (!uploadedFile && audioUrlRaw && !audioUrl) {
     setFlash(req, "error", "Audio URL must be a valid http/https URL.");
-    return res.redirect("/admin");
+    return res.redirect(returnTo);
   }
 
   if (!uploadedFile && !audioUrl) {
     setFlash(req, "error", "Audio file is required (upload or URL).");
-    return res.redirect("/admin");
+    return res.redirect(returnTo);
   }
 
   let storedFilename = "";
@@ -724,7 +927,7 @@ app.post("/admin/niggunim", requireAuth, uploadMiddleware, requireCsrfToken, asy
       if (!isAllowedAudioType(metadata)) {
         removeAudioFile(uploadedFile.filename);
         setFlash(req, "error", "Unsupported audio format.");
-        return res.redirect("/admin");
+        return res.redirect(returnTo);
       }
 
       storedFilename = uploadedFile.filename;
@@ -745,6 +948,8 @@ app.post("/admin/niggunim", requireAuth, uploadMiddleware, requireCsrfToken, asy
       musicalKey,
       singers,
       authors,
+      occasions,
+      prayerTimes,
       audioPath: storedFilename,
       audioSourceUrl,
       originalFilename,
@@ -752,7 +957,7 @@ app.post("/admin/niggunim", requireAuth, uploadMiddleware, requireCsrfToken, asy
     });
 
     setFlash(req, "success", `Niggun \"${title}\" added.`);
-    return res.redirect("/admin");
+    return res.redirect(returnTo);
   } catch (error) {
     if (storedFilename) {
       removeAudioFile(storedFilename);
@@ -763,28 +968,211 @@ app.post("/admin/niggunim", requireAuth, uploadMiddleware, requireCsrfToken, asy
     }
 
     setFlash(req, "error", error.message || "Unable to add niggun.");
-    return res.redirect("/admin");
+    return res.redirect(returnTo);
+  }
+});
+
+app.get("/admin/niggunim/:id/edit", requireAuth, (req, res) => {
+  const niggunId = Number(req.params.id);
+  const returnTo = normalizeAdminReturnTo(req.query.returnTo, "/admin");
+
+  if (!Number.isInteger(niggunId) || niggunId <= 0) {
+    setFlash(req, "error", "Invalid niggun id.");
+    return res.redirect(returnTo);
+  }
+
+  const niggun = getNiggunById(niggunId);
+  if (!niggun) {
+    setFlash(req, "error", "Niggun not found.");
+    return res.redirect(returnTo);
+  }
+
+  return res.render("admin/edit-niggun", {
+    niggun,
+    returnTo,
+    tempoOptions: TEMPO_OPTIONS,
+    keyOptions: MUSICAL_KEY_OPTIONS,
+    occasionOptions: OCCASION_TAG_OPTIONS,
+    prayerTimeOptions: PRAYER_TIME_TAG_OPTIONS
+  });
+});
+
+app.post("/admin/niggunim/:id", requireAuth, uploadForEdit, requireCsrfToken, async (req, res) => {
+  const niggunId = Number(req.params.id);
+  const returnTo = normalizeAdminReturnTo(req.body.returnTo, "/admin");
+  const title = sanitizeText(req.body.title || "");
+  const notes = sanitizeText(req.body.notes || "");
+  const tempo = sanitizeText(req.body.tempo || "");
+  const musicalKey = sanitizeText(req.body.musicalKey || "");
+  const singers = parseCsvInput(req.body.singers || "");
+  const authors = parseCsvInput(req.body.authors || "");
+  const occasions = parseMultiSelectInput(req.body.occasions, OCCASION_TAG_OPTIONS);
+  const prayerTimes = parseMultiSelectInput(req.body.prayerTimes, PRAYER_TIME_TAG_OPTIONS);
+  const audioUrlRaw = sanitizeText(req.body.audioUrl || "");
+  const audioUrl = ensureHttpUrl(audioUrlRaw);
+
+  const uploadedFile = req.file || null;
+
+  if (!Number.isInteger(niggunId) || niggunId <= 0) {
+    if (uploadedFile) {
+      removeAudioFile(uploadedFile.filename);
+    }
+    setFlash(req, "error", "Invalid niggun id.");
+    return res.redirect(returnTo);
+  }
+
+  const existingNiggun = getNiggunById(niggunId);
+  if (!existingNiggun) {
+    if (uploadedFile) {
+      removeAudioFile(uploadedFile.filename);
+    }
+    setFlash(req, "error", "Niggun not found.");
+    return res.redirect(returnTo);
+  }
+
+  if (!title) {
+    if (uploadedFile) {
+      removeAudioFile(uploadedFile.filename);
+    }
+    setFlash(req, "error", "Title is required.");
+    return res.redirect(returnTo);
+  }
+
+  if (singers.length === 0) {
+    if (uploadedFile) {
+      removeAudioFile(uploadedFile.filename);
+    }
+    setFlash(req, "error", "At least one singer is required.");
+    return res.redirect(returnTo);
+  }
+
+  if (authors.length === 0) {
+    if (uploadedFile) {
+      removeAudioFile(uploadedFile.filename);
+    }
+    setFlash(req, "error", "At least one author is required.");
+    return res.redirect(returnTo);
+  }
+
+  if (tempo && !TEMPO_OPTIONS.includes(tempo)) {
+    if (uploadedFile) {
+      removeAudioFile(uploadedFile.filename);
+    }
+    setFlash(req, "error", "Tempo must be Fast, Medium, or Slow.");
+    return res.redirect(returnTo);
+  }
+
+  if (musicalKey && !MUSICAL_KEY_OPTIONS.includes(musicalKey)) {
+    if (uploadedFile) {
+      removeAudioFile(uploadedFile.filename);
+    }
+    setFlash(req, "error", "Please choose a valid musical key.");
+    return res.redirect(returnTo);
+  }
+
+  if (uploadedFile && audioUrl) {
+    removeAudioFile(uploadedFile.filename);
+    setFlash(req, "error", "Choose either file upload or audio URL, not both.");
+    return res.redirect(returnTo);
+  }
+
+  if (!uploadedFile && audioUrlRaw && !audioUrl) {
+    setFlash(req, "error", "Audio URL must be a valid http/https URL.");
+    return res.redirect(returnTo);
+  }
+
+  let storedFilename = existingNiggun.audioPath;
+  let mimeType = existingNiggun.mimeType || "";
+  let originalFilename = existingNiggun.originalFilename || "";
+  let audioSourceUrl = existingNiggun.audioSourceUrl || "";
+  let didReplaceAudio = false;
+
+  try {
+    if (uploadedFile) {
+      const metadata = getFileMetadata(uploadedFile);
+      if (!isAllowedAudioType(metadata)) {
+        removeAudioFile(uploadedFile.filename);
+        setFlash(req, "error", "Unsupported audio format.");
+        return res.redirect(returnTo);
+      }
+
+      storedFilename = uploadedFile.filename;
+      mimeType = metadata.mimeType;
+      originalFilename = metadata.originalFilename;
+      audioSourceUrl = "";
+      didReplaceAudio = true;
+    } else if (audioUrl) {
+      const downloaded = await downloadAudioFromUrl(audioUrl);
+      storedFilename = downloaded.storedFilename;
+      mimeType = downloaded.mimeType;
+      originalFilename = downloaded.originalFilename;
+      audioSourceUrl = audioUrl;
+      didReplaceAudio = true;
+    }
+
+    const updated = updateNiggun({
+      id: niggunId,
+      title,
+      notes,
+      tempo,
+      musicalKey,
+      singers,
+      authors,
+      occasions,
+      prayerTimes,
+      audioPath: storedFilename,
+      audioSourceUrl,
+      originalFilename,
+      mimeType
+    });
+
+    if (!updated) {
+      if (didReplaceAudio && storedFilename !== existingNiggun.audioPath) {
+        removeAudioFile(storedFilename);
+      }
+      setFlash(req, "error", "Niggun not found.");
+      return res.redirect(returnTo);
+    }
+
+    if (didReplaceAudio && updated.previousAudioPath && updated.previousAudioPath !== updated.newAudioPath) {
+      removeAudioFile(updated.previousAudioPath);
+    }
+
+    setFlash(req, "success", `Niggun \"${title}\" updated.`);
+    return res.redirect(returnTo);
+  } catch (error) {
+    if (didReplaceAudio && storedFilename && storedFilename !== existingNiggun.audioPath) {
+      removeAudioFile(storedFilename);
+    }
+
+    if (uploadedFile && uploadedFile.filename && uploadedFile.filename !== existingNiggun.audioPath) {
+      removeAudioFile(uploadedFile.filename);
+    }
+
+    setFlash(req, "error", error.message || "Unable to update niggun.");
+    return res.redirect(returnTo);
   }
 });
 
 app.post("/admin/niggunim/:id/delete", requireAuth, requireCsrfToken, (req, res) => {
+  const returnTo = normalizeAdminReturnTo(req.body.returnTo, "/admin");
   const niggunId = Number(req.params.id);
 
   if (!Number.isInteger(niggunId) || niggunId <= 0) {
     setFlash(req, "error", "Invalid niggun id.");
-    return res.redirect("/admin");
+    return res.redirect(returnTo);
   }
 
   const deleted = deleteNiggun(niggunId);
 
   if (!deleted) {
     setFlash(req, "error", "Niggun not found.");
-    return res.redirect("/admin");
+    return res.redirect(returnTo);
   }
 
   removeAudioFile(deleted.audioPath);
   setFlash(req, "success", "Niggun deleted.");
-  return res.redirect("/admin");
+  return res.redirect(returnTo);
 });
 
 app.use((req, res) => {
@@ -803,7 +1191,12 @@ app.use((error, req, res, next) => {
 
 async function startServer() {
   try {
-    await redisClient.connect();
+    if (useRedisSessions && redisClient) {
+      await redisClient.connect();
+      console.log(`Redis session store connected (${redisUrl}).`);
+    } else {
+      console.log("Session store: in-memory.");
+    }
 
     const port = Number(process.env.PORT || 3000);
     app.listen(port, () => {
@@ -811,6 +1204,9 @@ async function startServer() {
     });
   } catch (error) {
     console.error("Failed to connect to Redis session store.", error);
+    if (!isProduction) {
+      console.error("For local dev, set SESSION_STORE=memory in .env to run without Redis.");
+    }
     process.exit(1);
   }
 }

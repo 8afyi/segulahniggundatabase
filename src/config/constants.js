@@ -33,6 +33,21 @@ const MUSICAL_KEY_OPTIONS = [
   "Ab Minor"
 ];
 
+const OCCASION_TAG_OPTIONS = [
+  "Weekday",
+  "Shabbat",
+  "Festivals",
+  "Rosh Chodesh",
+  "High Holidays"
+];
+
+const PRAYER_TIME_TAG_OPTIONS = [
+  "Shacharit",
+  "Musaf",
+  "Minchah",
+  "Maariv"
+];
+
 const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
 
 const ALLOWED_AUDIO_MIME_TYPES = new Set([
@@ -64,6 +79,8 @@ const ALLOWED_AUDIO_EXTENSIONS = new Set([
 module.exports = {
   TEMPO_OPTIONS,
   MUSICAL_KEY_OPTIONS,
+  OCCASION_TAG_OPTIONS,
+  PRAYER_TIME_TAG_OPTIONS,
   MAX_AUDIO_BYTES,
   ALLOWED_AUDIO_MIME_TYPES,
   ALLOWED_AUDIO_EXTENSIONS

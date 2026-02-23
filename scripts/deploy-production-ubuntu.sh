@@ -180,8 +180,26 @@ ensure_runtime_dirs() {
   install -d -m 0755 -o "$APP_USER" -g "$APP_GROUP" "$APP_DIR/uploads/audio"
 }
 
+ensure_helper_scripts_executable() {
+  chmod +x "$APP_DIR/scripts/backup-data.sh"
+  chmod +x "$APP_DIR/scripts/restore-data.sh"
+}
+
 ensure_redis_service() {
-  systemctl enable --now redis-server
+  local unit_name=""
+
+  if systemctl list-unit-files --type=service --no-legend --no-pager | awk '{print $1}' | grep -qx "redis-server.service"; then
+    unit_name="redis-server"
+  elif systemctl list-unit-files --type=service --no-legend --no-pager | awk '{print $1}' | grep -qx "redis.service"; then
+    unit_name="redis"
+  fi
+
+  if [[ -z "$unit_name" ]]; then
+    fail "Redis systemd unit not found after package install. Check 'apt install redis-server' output."
+  fi
+
+  log "Enabling Redis service (${unit_name})"
+  systemctl enable --now "$unit_name"
 }
 
 write_env_file() {
@@ -201,6 +219,7 @@ NODE_ENV=production
 PORT=${PORT}
 SESSION_SECRET=${session_secret}
 DB_PATH=${APP_DIR}/data/app.db
+SESSION_STORE=redis
 REDIS_URL=${REDIS_URL}
 TRUST_PROXY=1
 LOGIN_FAILURE_LIMIT=5
@@ -244,6 +263,38 @@ SERVICE
   systemctl daemon-reload
   systemctl enable "$APP_NAME"
   systemctl restart "$APP_NAME"
+}
+
+write_backup_timer() {
+  local backup_service_file="/etc/systemd/system/${APP_NAME}-backup.service"
+  local backup_timer_file="/etc/systemd/system/${APP_NAME}-backup.timer"
+
+  cat > "$backup_service_file" <<SERVICE
+[Unit]
+Description=Backup ${APP_NAME} data
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=${APP_DIR}/scripts/backup-data.sh --app-name ${APP_NAME} --app-dir ${APP_DIR} --env-file /etc/${APP_NAME}.env --backup-dir /var/backups/${APP_NAME} --retention-days 14
+SERVICE
+
+  cat > "$backup_timer_file" <<TIMER
+[Unit]
+Description=Daily backup timer for ${APP_NAME}
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=10m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+TIMER
+
+  systemctl daemon-reload
+  systemctl enable --now "${APP_NAME}-backup.timer"
 }
 
 write_nginx_config() {
@@ -322,16 +373,18 @@ main() {
 
   log "Installing base packages"
   apt-get update
-  apt_install ca-certificates curl gnupg git nginx openssl redis-server ufw
+  apt_install ca-certificates curl gnupg git nginx openssl redis-server rsync sqlite3 ufw
 
   install_nodejs
   ensure_app_user
   checkout_or_update_repo
   install_node_deps
   ensure_runtime_dirs
+  ensure_helper_scripts_executable
   ensure_redis_service
   write_env_file
   write_systemd_service
+  write_backup_timer
   write_nginx_config
   setup_firewall
   setup_tls_if_requested
@@ -344,6 +397,8 @@ main() {
   echo "Useful commands:"
   echo "  journalctl -u ${APP_NAME} -f"
   echo "  systemctl restart ${APP_NAME}"
+  echo "  systemctl status ${APP_NAME}-backup.timer"
+  echo "  /var/backups/${APP_NAME}/"
   echo "  nginx -t && systemctl reload nginx"
 }
 
