@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Segulah Niggun Database</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="site-shell">
+      <header class="site-header">
+        <div class="wrap">
+          <div class="brand-row">
+            <a href="/" class="brand-link" aria-label="Segulah Niggun Database home">
+              <img src="/assets/segulah-wide.jpg" alt="Segulah" class="brand-logo" />
+            </a>
+            <a href="/admin/login" class="button-secondary">Admin</a>
+          </div>
+          <p class="site-tagline">Browse niggunim by song details, singers, authors, tempo, and key.</p>
+        </div>
+      </header>
+
+      <main class="wrap shell-main">
+        <%- include('../partials/flash', { flash: flash }) %>
+
+        <section class="panel panel-soft">
+          <h2>Find Niggunim</h2>
+          <form method="get" action="/" class="filter-grid">
+            <label>
+              Search title, notes, singer, or author
+              <input type="text" name="q" value="<%= filters.searchQuery %>" placeholder="e.g. Ahavat Olam" />
+            </label>
+
+            <label>
+              Tempo
+              <select name="tempo">
+                <option value="">All</option>
+                <% for (const tempo of tempoOptions) { %>
+                  <option value="<%= tempo %>" <%= filters.tempo === tempo ? 'selected' : '' %>><%= tempo %></option>
+                <% } %>
+              </select>
+            </label>
+
+            <label>
+              Key
+              <select name="key">
+                <option value="">All</option>
+                <% for (const key of keyOptions) { %>
+                  <option value="<%= key %>" <%= filters.musicalKey === key ? 'selected' : '' %>><%= key %></option>
+                <% } %>
+              </select>
+            </label>
+
+            <label>
+              Singer
+              <select name="singer">
+                <option value="">All</option>
+                <% for (const singer of singers) { %>
+                  <option value="<%= singer %>" <%= filters.singer === singer ? 'selected' : '' %>><%= singer %></option>
+                <% } %>
+              </select>
+            </label>
+
+            <label>
+              Author
+              <select name="author">
+                <option value="">All</option>
+                <% for (const author of authors) { %>
+                  <option value="<%= author %>" <%= filters.author === author ? 'selected' : '' %>><%= author %></option>
+                <% } %>
+              </select>
+            </label>
+
+            <div class="filter-actions">
+              <button type="submit">Apply Filters</button>
+              <a href="/" class="button-secondary">Clear</a>
+            </div>
+          </form>
+        </section>
+
+        <section>
+          <h2>Results (<%= niggunim.length %>)</h2>
+
+          <% if (niggunim.length === 0) { %>
+            <div class="panel">
+              <p>No niggunim matched your search.</p>
+            </div>
+          <% } else { %>
+            <div class="card-grid">
+              <% for (const niggun of niggunim) { %>
+                <% const notesPreview = niggun.notes && niggun.notes.length > 180 ? `${niggun.notes.slice(0, 180)}...` : niggun.notes; %>
+                <article class="card">
+                  <h3><a href="/niggunim/<%= niggun.id %>"><%= niggun.title %></a></h3>
+                  <p><strong>Singers:</strong> <%= niggun.singers.join(', ') %></p>
+                  <p><strong>Authors:</strong> <%= niggun.authors.join(', ') %></p>
+                  <p><strong>Tempo:</strong> <%= niggun.tempo || 'N/A' %></p>
+                  <p><strong>Key:</strong> <%= niggun.musicalKey || 'N/A' %></p>
+                  <% if (notesPreview) { %>
+                    <p><strong>Notes:</strong> <%= notesPreview %></p>
+                  <% } %>
+                  <p><a href="/niggunim/<%= niggun.id %>" class="button-secondary">Open Card</a></p>
+                </article>
+              <% } %>
+            </div>
+          <% } %>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

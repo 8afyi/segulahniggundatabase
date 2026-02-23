@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin Login | Segulah Niggun Database</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="site-shell">
+      <header class="site-header">
+        <div class="wrap">
+          <div class="brand-row">
+            <a href="/" class="brand-link" aria-label="Segulah Niggun Database home">
+              <img src="/assets/segulah-wide.jpg" alt="Segulah" class="brand-logo" />
+            </a>
+            <a href="/" class="button-secondary">Public Site</a>
+          </div>
+          <p class="admin-meta">Administrator sign-in</p>
+        </div>
+      </header>
+
+      <main class="wrap shell-main top-space narrow">
+        <section class="panel">
+          <h1>Admin Sign In</h1>
+          <%- include('../partials/flash', { flash: flash }) %>
+
+          <form method="post" action="/admin/login" class="stack-form">
+            <label>
+              Username
+              <input type="text" name="username" required autocomplete="username" />
+            </label>
+
+            <label>
+              Password
+              <input type="password" name="password" required autocomplete="current-password" />
+            </label>
+
+            <button type="submit">Sign In</button>
+          </form>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

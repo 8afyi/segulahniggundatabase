@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin Dashboard | Segulah Niggun Database</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <div class="site-shell">
+      <header class="site-header">
+        <div class="wrap">
+          <div class="brand-row">
+            <a href="/" class="brand-link" aria-label="Segulah Niggun Database home">
+              <img src="/assets/segulah-wide.jpg" alt="Segulah" class="brand-logo" />
+            </a>
+            <form method="post" action="/admin/logout">
+              <button type="submit" class="button-secondary">Sign out</button>
+            </form>
+          </div>
+          <p class="admin-meta">Admin dashboard. Signed in as <strong><%= currentUser ? currentUser.username : '' %></strong></p>
+        </div>
+      </header>
+
+      <main class="wrap shell-main">
+        <%- include('../partials/flash', { flash: flash }) %>
+
+        <section class="panel panel-soft" id="niggunim">
+          <h2>Add Niggun</h2>
+          <form method="post" action="/admin/niggunim" enctype="multipart/form-data" class="stack-form">
+            <label>
+              Title (required)
+              <input type="text" name="title" required />
+            </label>
+
+            <label>
+              Singer(s) (required, comma-separated)
+              <input type="text" name="singers" required placeholder="Singer One, Singer Two" />
+            </label>
+
+            <label>
+              Author(s) (required, comma-separated)
+              <input type="text" name="authors" required placeholder="Author One, Author Two" />
+            </label>
+
+            <label>
+              Tempo
+              <select name="tempo">
+                <option value="">Select tempo</option>
+                <% for (const tempo of tempoOptions) { %>
+                  <option value="<%= tempo %>"><%= tempo %></option>
+                <% } %>
+              </select>
+            </label>
+
+            <label>
+              Key
+              <select name="musicalKey">
+                <option value="">Select key</option>
+                <% for (const key of keyOptions) { %>
+                  <option value="<%= key %>"><%= key %></option>
+                <% } %>
+              </select>
+            </label>
+
+            <label>
+              Notes / Description
+              <textarea name="notes" rows="4" placeholder="Optional notes or description"></textarea>
+            </label>
+
+            <label>
+              Audio file upload (max 20MB)
+              <input type="file" name="audioFile" accept="audio/*" />
+            </label>
+
+            <label>
+              OR audio URL (http/https)
+              <input type="url" name="audioUrl" placeholder="https://example.com/song.mp3" />
+            </label>
+
+            <button type="submit">Add Niggun</button>
+          </form>
+        </section>
+
+        <section class="panel">
+          <h2>Existing Niggunim (<%= niggunim.length %>)</h2>
+
+          <% if (niggunim.length === 0) { %>
+            <p>No niggunim uploaded yet.</p>
+          <% } else { %>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Title</th>
+                    <th>Singers</th>
+                    <th>Authors</th>
+                    <th>Tempo</th>
+                    <th>Key</th>
+                    <th>Uploaded</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% for (const niggun of niggunim) { %>
+                    <tr>
+                      <td><a href="/niggunim/<%= niggun.id %>" target="_blank" rel="noreferrer"><%= niggun.title %></a></td>
+                      <td><%= niggun.singers.join(', ') %></td>
+                      <td><%= niggun.authors.join(', ') %></td>
+                      <td><%= niggun.tempo || 'N/A' %></td>
+                      <td><%= niggun.musicalKey || 'N/A' %></td>
+                      <td><%= niggun.createdAt %></td>
+                      <td>
+                        <form method="post" action="/admin/niggunim/<%= niggun.id %>/delete" data-confirm="Delete this niggun? This cannot be undone.">
+                          <button type="submit" class="button-danger">Delete</button>
+                        </form>
+                      </td>
+                    </tr>
+                  <% } %>
+                </tbody>
+              </table>
+            </div>
+          <% } %>
+        </section>
+
+        <section class="panel" id="users">
+          <h2>User Management</h2>
+
+          <form method="post" action="/admin/users" class="stack-form compact-form">
+            <label>
+              New username
+              <input type="text" name="username" required minlength="3" maxlength="32" />
+            </label>
+
+            <label>
+              New password
+              <input type="password" name="password" required minlength="8" />
+            </label>
+
+            <button type="submit">Add User</button>
+          </form>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Username</th>
+                  <th>Created</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% for (const user of users) { %>
+                  <tr>
+                    <td><%= user.username %></td>
+                    <td><%= user.createdAt %></td>
+                    <td>
+                      <% if (currentUser && currentUser.id === user.id) { %>
+                        <span class="muted">Current user</span>
+                      <% } else { %>
+                        <form method="post" action="/admin/users/<%= user.id %>/delete" data-confirm="Delete this user?">
+                          <button type="submit" class="button-danger">Delete</button>
+                        </form>
+                      <% } %>
+                    </td>
+                  </tr>
+                <% } %>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

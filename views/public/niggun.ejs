@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title><%= niggun.title %> | Segulah Niggun Database</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="site-shell">
+      <header class="site-header">
+        <div class="wrap">
+          <div class="brand-row">
+            <a href="/" class="brand-link" aria-label="Segulah Niggun Database home">
+              <img src="/assets/segulah-wide.jpg" alt="Segulah" class="brand-logo" />
+            </a>
+            <a href="/admin/login" class="button-secondary">Admin</a>
+          </div>
+          <p class="site-tagline">Niggun detail card and audio playback.</p>
+        </div>
+      </header>
+
+      <main class="wrap shell-main">
+        <p><a href="/" class="button-secondary">Back to list</a></p>
+
+        <article class="panel detail-card">
+          <h2><%= niggun.title %></h2>
+          <p><strong>Singers:</strong> <%= niggun.singers.join(', ') %></p>
+          <p><strong>Authors:</strong> <%= niggun.authors.join(', ') %></p>
+          <p><strong>Tempo:</strong> <%= niggun.tempo || 'N/A' %></p>
+          <p><strong>Key:</strong> <%= niggun.musicalKey || 'N/A' %></p>
+          <p><strong>Date Uploaded:</strong> <%= niggun.createdAt %></p>
+
+          <% if (niggun.notes) { %>
+            <div>
+              <h3>Notes</h3>
+              <p><%= niggun.notes %></p>
+            </div>
+          <% } %>
+
+          <div>
+            <h3>Listen</h3>
+            <audio controls preload="metadata" src="/media/<%= niggun.audioPath %>"></audio>
+            <% if (niggun.originalFilename) { %>
+              <p><small>Source file: <%= niggun.originalFilename %></small></p>
+            <% } %>
+          </div>
+        </article>
+      </main>
+    </div>
+  </body>
+</html>
