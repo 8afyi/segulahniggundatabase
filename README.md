@@ -48,6 +48,41 @@ Why this stack for MVP:
    - Public site: `http://localhost:3000`
    - First-run admin setup: `http://localhost:3000/admin/setup`
 
+## Deploy helper (fresh Ubuntu)
+Use `scripts/deploy-production-ubuntu.sh` on the server as `root`.
+
+Example (with TLS):
+```bash
+sudo ./scripts/deploy-production-ubuntu.sh \
+  --repo-url git@github.com:YOUR_ORG/YOUR_REPO.git \
+  --branch main \
+  --domain niggun.example.com \
+  --email admin@example.com \
+  --port 3000
+```
+
+Example (no domain/TLS yet):
+```bash
+sudo ./scripts/deploy-production-ubuntu.sh \
+  --repo-url git@github.com:YOUR_ORG/YOUR_REPO.git \
+  --branch main \
+  --port 3000 \
+  --skip-certbot
+```
+
+What the script does:
+- Installs system packages (`git`, `nginx`, `ufw`, Node.js 20, etc.)
+- Creates an app user and deploys code to `/srv/segulah-niggun-database`
+- Installs production Node dependencies
+- Creates runtime dirs for DB and uploaded audio
+- Writes `/etc/segulah-niggun-database.env` (preserves existing `SESSION_SECRET` on reruns)
+- Configures and starts a `systemd` service
+- Configures Nginx reverse proxy with `client_max_body_size 20M`
+- Optionally provisions Let’s Encrypt certs when `--domain` and `--email` are provided
+
+Update deploy:
+- Re-run the same deploy command; it will pull latest code from the configured branch and restart the service.
+
 ## Production notes (Ubuntu)
 - Set a strong `SESSION_SECRET`
 - Run behind Nginx/Caddy with TLS
