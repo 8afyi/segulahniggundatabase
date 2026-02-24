@@ -377,6 +377,16 @@ function deleteUser(userId) {
   return db.prepare("DELETE FROM users WHERE id = ?").run(userId).changes;
 }
 
+function updateUserPassword(userId, passwordHash) {
+  return db
+    .prepare(
+      `UPDATE users
+       SET password_hash = ?
+       WHERE id = ?`
+    )
+    .run(passwordHash, userId).changes;
+}
+
 function getLoginSecurityRecord(keyType, keyValue) {
   return (
     db
@@ -901,6 +911,7 @@ module.exports = {
   getUserById,
   listUsers,
   deleteUser,
+  updateUserPassword,
   getLoginSecurityRecord,
   upsertLoginSecurityRecord,
   clearLoginSecurityRecord,

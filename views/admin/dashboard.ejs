@@ -27,329 +27,352 @@
       <main class="wrap shell-main">
         <%- include('../partials/flash', { flash: flash }) %>
 
-        <section class="panel panel-soft" id="niggunim">
-          <h2>Add Niggun</h2>
-          <form method="post" action="/admin/niggunim" enctype="multipart/form-data" class="stack-form">
-            <%- include('../partials/csrf-field', { csrfToken: csrfToken }) %>
-            <input type="hidden" name="returnTo" value="<%= adminReturnTo %>" />
-            <label>
-              Title (required)
-              <input type="text" name="title" required />
-            </label>
-
-            <label>
-              Singer(s) (required, comma-separated)
-              <input type="text" name="singers" required placeholder="Singer One, Singer Two" />
-            </label>
-
-            <label>
-              Author(s) (required, comma-separated)
-              <input type="text" name="authors" required placeholder="Author One, Author Two" />
-            </label>
-
-            <fieldset class="checkbox-fieldset">
-              <legend>Occasion Tags</legend>
-              <div class="checkbox-group">
-                <% for (const occasion of occasionOptions) { %>
-                  <label class="checkbox-item">
-                    <input type="checkbox" name="occasions" value="<%= occasion %>" />
-                    <span><%= occasion %></span>
-                  </label>
-                <% } %>
-              </div>
-            </fieldset>
-
-            <fieldset class="checkbox-fieldset">
-              <legend>Prayer Tags</legend>
-              <div class="checkbox-group">
-                <% for (const prayerTime of prayerTimeOptions) { %>
-                  <label class="checkbox-item">
-                    <input type="checkbox" name="prayerTimes" value="<%= prayerTime %>" />
-                    <span><%= prayerTime %></span>
-                  </label>
-                <% } %>
-              </div>
-            </fieldset>
-
-            <label>
-              Tempo
-              <select name="tempo">
-                <option value="">Select tempo</option>
-                <% for (const tempo of tempoOptions) { %>
-                  <option value="<%= tempo %>"><%= tempo %></option>
-                <% } %>
-              </select>
-            </label>
-
-            <label>
-              Key
-              <select name="musicalKey">
-                <option value="">Select key</option>
-                <% for (const key of keyOptions) { %>
-                  <option value="<%= key %>"><%= key %></option>
-                <% } %>
-              </select>
-            </label>
-
-            <label>
-              Notes / Description
-              <textarea name="notes" rows="4" placeholder="Optional notes or description"></textarea>
-            </label>
-
-            <label>
-              Audio file upload (max 20MB)
-              <input type="file" name="audioFile" accept="audio/*" />
-            </label>
-
-            <label>
-              OR audio URL (http/https)
-              <input type="url" name="audioUrl" placeholder="https://example.com/song.mp3" />
-            </label>
-
-            <button type="submit">Add Niggun</button>
-          </form>
-        </section>
-
-        <section class="panel">
-          <div class="panel-head">
-            <h2>Existing Niggunim (<%= pagination.totalCount %>)</h2>
-          </div>
-
-          <form method="get" action="/admin" class="filter-grid">
-            <label>
-              Search title, notes, singer, or author
-              <input type="text" name="q" value="<%= filters.searchQuery %>" placeholder="e.g. Ahavat Olam" />
-            </label>
-
-            <label>
-              Tempo
-              <select name="tempo">
-                <option value="">All</option>
-                <% for (const tempo of tempoOptions) { %>
-                  <option value="<%= tempo %>" <%= filters.tempo === tempo ? 'selected' : '' %>><%= tempo %></option>
-                <% } %>
-              </select>
-            </label>
-
-            <label>
-              Key
-              <select name="key">
-                <option value="">All</option>
-                <% for (const key of keyOptions) { %>
-                  <option value="<%= key %>" <%= filters.musicalKey === key ? 'selected' : '' %>><%= key %></option>
-                <% } %>
-              </select>
-            </label>
-
-            <label>
-              Singer
-              <select name="singer">
-                <option value="">All</option>
-                <% for (const singer of singers) { %>
-                  <option value="<%= singer %>" <%= filters.singer === singer ? 'selected' : '' %>><%= singer %></option>
-                <% } %>
-              </select>
-            </label>
-
-            <label>
-              Author
-              <select name="author">
-                <option value="">All</option>
-                <% for (const author of authors) { %>
-                  <option value="<%= author %>" <%= filters.author === author ? 'selected' : '' %>><%= author %></option>
-                <% } %>
-              </select>
-            </label>
-
-            <label>
-              Sort
-              <select name="sort">
-                <% for (const option of sortOptions) { %>
-                  <option value="<%= option.value %>" <%= sortKey === option.value ? 'selected' : '' %>><%= option.label %></option>
-                <% } %>
-              </select>
-            </label>
-
-            <fieldset class="checkbox-fieldset">
-              <legend>Occasion Tags</legend>
-              <div class="checkbox-group">
-                <% for (const occasion of occasionOptions) { %>
-                  <label class="checkbox-item">
-                    <input
-                      type="checkbox"
-                      name="occasions"
-                      value="<%= occasion %>"
-                      <%= filters.occasions.includes(occasion) ? 'checked' : '' %>
-                    />
-                    <span><%= occasion %></span>
-                  </label>
-                <% } %>
-              </div>
-            </fieldset>
-
-            <fieldset class="checkbox-fieldset">
-              <legend>Prayer Tags</legend>
-              <div class="checkbox-group">
-                <% for (const prayerTime of prayerTimeOptions) { %>
-                  <label class="checkbox-item">
-                    <input
-                      type="checkbox"
-                      name="prayerTimes"
-                      value="<%= prayerTime %>"
-                      <%= filters.prayerTimes.includes(prayerTime) ? 'checked' : '' %>
-                    />
-                    <span><%= prayerTime %></span>
-                  </label>
-                <% } %>
-              </div>
-            </fieldset>
-
-            <div class="filter-actions">
-              <button type="submit">Apply Filters</button>
-              <a href="/admin" class="button-secondary">Clear</a>
-            </div>
-          </form>
-
-          <% if (pagination.totalCount > 0) { %>
-            <% const pageStart = pagination.offset + 1; %>
-            <% const pageEnd = pagination.offset + niggunim.length; %>
-            <p class="muted">Showing <%= pageStart %>-<%= pageEnd %> of <%= pagination.totalCount %> (page <%= pagination.page %> of <%= pagination.totalPages %>)</p>
+        <nav class="panel panel-soft admin-nav" aria-label="Admin sections">
+          <% for (const item of adminNavigation || []) { %>
+            <a href="<%= item.href %>" class="admin-nav-link <%= item.active ? 'is-active' : '' %>">
+              <%= item.label %>
+            </a>
           <% } %>
+        </nav>
 
-          <% if (niggunim.length === 0) { %>
-            <p>No niggunim uploaded yet.</p>
-          <% } else { %>
+        <% if (adminSection === 'add') { %>
+          <section class="panel panel-soft" id="niggunim">
+            <h2>Add Niggun</h2>
+            <form method="post" action="/admin/niggunim" enctype="multipart/form-data" class="stack-form">
+              <%- include('../partials/csrf-field', { csrfToken: csrfToken }) %>
+              <input type="hidden" name="returnTo" value="<%= adminReturnTo %>" />
+              <label>
+                Title (required)
+                <input type="text" name="title" required />
+              </label>
+
+              <label>
+                Singer(s) (required, comma-separated)
+                <input type="text" name="singers" required placeholder="Singer One, Singer Two" />
+              </label>
+
+              <label>
+                Author(s) (required, comma-separated)
+                <input type="text" name="authors" required placeholder="Author One, Author Two" />
+              </label>
+
+              <fieldset class="checkbox-fieldset">
+                <legend>Service Tags</legend>
+                <div class="checkbox-group">
+                  <% for (const occasion of occasionOptions) { %>
+                    <label class="checkbox-item">
+                      <input type="checkbox" name="occasions" value="<%= occasion %>" />
+                      <span><%= occasion %></span>
+                    </label>
+                  <% } %>
+                </div>
+              </fieldset>
+
+              <fieldset class="checkbox-fieldset">
+                <legend>Prayer Tags</legend>
+                <div class="checkbox-group">
+                  <% for (const prayerTime of prayerTimeOptions) { %>
+                    <label class="checkbox-item">
+                      <input type="checkbox" name="prayerTimes" value="<%= prayerTime %>" />
+                      <span><%= prayerTime %></span>
+                    </label>
+                  <% } %>
+                </div>
+              </fieldset>
+
+              <label>
+                Tempo
+                <select name="tempo">
+                  <option value="">Select tempo</option>
+                  <% for (const tempo of tempoOptions) { %>
+                    <option value="<%= tempo %>"><%= tempo %></option>
+                  <% } %>
+                </select>
+              </label>
+
+              <label>
+                Key
+                <select name="musicalKey">
+                  <option value="">Select key</option>
+                  <% for (const key of keyOptions) { %>
+                    <option value="<%= key %>"><%= key %></option>
+                  <% } %>
+                </select>
+              </label>
+
+              <label>
+                Notes / Description
+                <textarea name="notes" rows="4" placeholder="Optional notes or description"></textarea>
+              </label>
+
+              <label>
+                Audio file upload (max 20MB)
+                <input type="file" name="audioFile" accept="audio/*" />
+              </label>
+
+              <label>
+                OR audio URL (http/https)
+                <input type="url" name="audioUrl" placeholder="https://example.com/song.mp3" />
+              </label>
+
+              <button type="submit">Add Niggun</button>
+            </form>
+          </section>
+        <% } %>
+
+        <% if (adminSection === 'existing') { %>
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Existing Niggunim (<%= pagination.totalCount %>)</h2>
+            </div>
+
+            <form method="get" action="/admin/niggunim" class="filter-grid">
+              <label>
+                Search title, notes, singer, or author
+                <input type="text" name="q" value="<%= filters.searchQuery %>" placeholder="e.g. Ahavat Olam" />
+              </label>
+
+              <label>
+                Tempo
+                <select name="tempo">
+                  <option value="">All</option>
+                  <% for (const tempo of tempoOptions) { %>
+                    <option value="<%= tempo %>" <%= filters.tempo === tempo ? 'selected' : '' %>><%= tempo %></option>
+                  <% } %>
+                </select>
+              </label>
+
+              <label>
+                Key
+                <select name="key">
+                  <option value="">All</option>
+                  <% for (const key of keyOptions) { %>
+                    <option value="<%= key %>" <%= filters.musicalKey === key ? 'selected' : '' %>><%= key %></option>
+                  <% } %>
+                </select>
+              </label>
+
+              <label>
+                Singer
+                <select name="singer">
+                  <option value="">All</option>
+                  <% for (const singer of singers) { %>
+                    <option value="<%= singer %>" <%= filters.singer === singer ? 'selected' : '' %>><%= singer %></option>
+                  <% } %>
+                </select>
+              </label>
+
+              <label>
+                Author
+                <select name="author">
+                  <option value="">All</option>
+                  <% for (const author of authors) { %>
+                    <option value="<%= author %>" <%= filters.author === author ? 'selected' : '' %>><%= author %></option>
+                  <% } %>
+                </select>
+              </label>
+
+              <label>
+                Sort
+                <select name="sort">
+                  <% for (const option of sortOptions) { %>
+                    <option value="<%= option.value %>" <%= sortKey === option.value ? 'selected' : '' %>><%= option.label %></option>
+                  <% } %>
+                </select>
+              </label>
+
+              <fieldset class="checkbox-fieldset">
+                <legend>Service Tags</legend>
+                <div class="checkbox-group">
+                  <% for (const occasion of occasionOptions) { %>
+                    <label class="checkbox-item">
+                      <input
+                        type="checkbox"
+                        name="occasions"
+                        value="<%= occasion %>"
+                        <%= filters.occasions.includes(occasion) ? 'checked' : '' %>
+                      />
+                      <span><%= occasion %></span>
+                    </label>
+                  <% } %>
+                </div>
+              </fieldset>
+
+              <fieldset class="checkbox-fieldset">
+                <legend>Prayer Tags</legend>
+                <div class="checkbox-group">
+                  <% for (const prayerTime of prayerTimeOptions) { %>
+                    <label class="checkbox-item">
+                      <input
+                        type="checkbox"
+                        name="prayerTimes"
+                        value="<%= prayerTime %>"
+                        <%= filters.prayerTimes.includes(prayerTime) ? 'checked' : '' %>
+                      />
+                      <span><%= prayerTime %></span>
+                    </label>
+                  <% } %>
+                </div>
+              </fieldset>
+
+              <div class="filter-actions">
+                <button type="submit">Apply Filters</button>
+                <a href="/admin/niggunim" class="button-secondary">Clear</a>
+              </div>
+            </form>
+
+            <% if (pagination.totalCount > 0) { %>
+              <% const pageStart = pagination.offset + 1; %>
+              <% const pageEnd = pagination.offset + niggunim.length; %>
+              <p class="muted">Showing <%= pageStart %>-<%= pageEnd %> of <%= pagination.totalCount %> (page <%= pagination.page %> of <%= pagination.totalPages %>)</p>
+            <% } %>
+
+            <% if (niggunim.length === 0) { %>
+              <p>No niggunim uploaded yet.</p>
+            <% } else { %>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Title</th>
+                      <th>Singers</th>
+                      <th>Authors</th>
+                      <th>Service Tags</th>
+                      <th>Prayer Tags</th>
+                      <th>Tempo</th>
+                      <th>Key</th>
+                      <th>Uploaded</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <% for (const niggun of niggunim) { %>
+                      <tr>
+                        <td><a href="/niggunim/<%= niggun.id %>" target="_blank" rel="noreferrer"><%= niggun.title %></a></td>
+                        <td><%= niggun.singers.join(', ') %></td>
+                        <td><%= niggun.authors.join(', ') %></td>
+                        <td>
+                          <% if (niggun.occasions.length) { %>
+                            <div class="tag-list">
+                              <% for (const tag of niggun.occasions) { %>
+                                <span class="tag-chip"><%= tag %></span>
+                              <% } %>
+                            </div>
+                          <% } else { %>
+                            N/A
+                          <% } %>
+                        </td>
+                        <td>
+                          <% if (niggun.prayerTimes.length) { %>
+                            <div class="tag-list">
+                              <% for (const tag of niggun.prayerTimes) { %>
+                                <span class="tag-chip"><%= tag %></span>
+                              <% } %>
+                            </div>
+                          <% } else { %>
+                            N/A
+                          <% } %>
+                        </td>
+                        <td><%= niggun.tempo || 'N/A' %></td>
+                        <td><%= niggun.musicalKey || 'N/A' %></td>
+                        <td><%= niggun.createdAt %></td>
+                        <td>
+                          <a
+                            href="/admin/niggunim/<%= niggun.id %>/edit?returnTo=<%= encodeURIComponent(adminReturnTo) %>"
+                            class="button-secondary"
+                          >
+                            Edit
+                          </a>
+                          <form method="post" action="/admin/niggunim/<%= niggun.id %>/delete" data-confirm="Delete this niggun? This cannot be undone.">
+                            <%- include('../partials/csrf-field', { csrfToken: csrfToken }) %>
+                            <input type="hidden" name="returnTo" value="<%= adminReturnTo %>" />
+                            <button type="submit" class="button-danger">Delete</button>
+                          </form>
+                        </td>
+                      </tr>
+                    <% } %>
+                  </tbody>
+                </table>
+              </div>
+            <% } %>
+
+            <% if (pagination.totalPages > 1) { %>
+              <nav class="pagination" aria-label="Admin niggun pages">
+                <% if (pagination.hasPrevious) { %>
+                  <a href="<%= buildAdminUrl(pagination.previousPage) %>" class="button-secondary">Previous</a>
+                <% } %>
+
+                <span class="pagination-status">Page <%= pagination.page %> of <%= pagination.totalPages %></span>
+
+                <% if (pagination.hasNext) { %>
+                  <a href="<%= buildAdminUrl(pagination.nextPage) %>" class="button-secondary">Next</a>
+                <% } %>
+              </nav>
+            <% } %>
+          </section>
+        <% } %>
+
+        <% if (adminSection === 'users') { %>
+          <section class="panel" id="users">
+            <h2>User Management</h2>
+
+            <form method="post" action="/admin/users" class="stack-form compact-form">
+              <%- include('../partials/csrf-field', { csrfToken: csrfToken }) %>
+              <input type="hidden" name="returnTo" value="<%= adminReturnTo %>" />
+              <label>
+                New username
+                <input type="text" name="username" required minlength="3" maxlength="32" />
+              </label>
+
+              <label>
+                New password
+                <input type="password" name="password" required minlength="8" />
+              </label>
+
+              <button type="submit">Add User</button>
+            </form>
+
             <div class="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Title</th>
-                    <th>Singers</th>
-                    <th>Authors</th>
-                    <th>Occasion Tags</th>
-                    <th>Prayer Tags</th>
-                    <th>Tempo</th>
-                    <th>Key</th>
-                    <th>Uploaded</th>
-                    <th>Action</th>
+                    <th>Username</th>
+                    <th>Created</th>
+                    <th>Reset Password</th>
+                    <th>Delete</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <% for (const niggun of niggunim) { %>
+                  <% for (const user of users) { %>
                     <tr>
-                      <td><a href="/niggunim/<%= niggun.id %>" target="_blank" rel="noreferrer"><%= niggun.title %></a></td>
-                      <td><%= niggun.singers.join(', ') %></td>
-                      <td><%= niggun.authors.join(', ') %></td>
+                      <td><%= user.username %></td>
+                      <td><%= user.createdAt %></td>
                       <td>
-                        <% if (niggun.occasions.length) { %>
-                          <div class="tag-list">
-                            <% for (const tag of niggun.occasions) { %>
-                              <span class="tag-chip"><%= tag %></span>
-                            <% } %>
-                          </div>
-                        <% } else { %>
-                          N/A
-                        <% } %>
-                      </td>
-                      <td>
-                        <% if (niggun.prayerTimes.length) { %>
-                          <div class="tag-list">
-                            <% for (const tag of niggun.prayerTimes) { %>
-                              <span class="tag-chip"><%= tag %></span>
-                            <% } %>
-                          </div>
-                        <% } else { %>
-                          N/A
-                        <% } %>
-                      </td>
-                      <td><%= niggun.tempo || 'N/A' %></td>
-                      <td><%= niggun.musicalKey || 'N/A' %></td>
-                      <td><%= niggun.createdAt %></td>
-                      <td>
-                        <a
-                          href="/admin/niggunim/<%= niggun.id %>/edit?returnTo=<%= encodeURIComponent(adminReturnTo) %>"
-                          class="button-secondary"
-                        >
-                          Edit
-                        </a>
-                        <form method="post" action="/admin/niggunim/<%= niggun.id %>/delete" data-confirm="Delete this niggun? This cannot be undone.">
+                        <form method="post" action="/admin/users/<%= user.id %>/password" class="user-password-form" data-confirm="Reset password for this user?">
                           <%- include('../partials/csrf-field', { csrfToken: csrfToken }) %>
                           <input type="hidden" name="returnTo" value="<%= adminReturnTo %>" />
-                          <button type="submit" class="button-danger">Delete</button>
+                          <input type="password" name="password" required minlength="8" placeholder="New password" />
+                          <button type="submit" class="button-secondary">Reset</button>
                         </form>
+                      </td>
+                      <td>
+                        <% if (currentUser && currentUser.id === user.id) { %>
+                          <span class="muted">Current user</span>
+                        <% } else { %>
+                          <form method="post" action="/admin/users/<%= user.id %>/delete" data-confirm="Delete this user?">
+                            <%- include('../partials/csrf-field', { csrfToken: csrfToken }) %>
+                            <input type="hidden" name="returnTo" value="<%= adminReturnTo %>" />
+                            <button type="submit" class="button-danger">Delete</button>
+                          </form>
+                        <% } %>
                       </td>
                     </tr>
                   <% } %>
                 </tbody>
               </table>
             </div>
-          <% } %>
-
-          <% if (pagination.totalPages > 1) { %>
-            <nav class="pagination" aria-label="Admin niggun pages">
-              <% if (pagination.hasPrevious) { %>
-                <a href="<%= buildAdminUrl(pagination.previousPage) %>" class="button-secondary">Previous</a>
-              <% } %>
-
-              <span class="pagination-status">Page <%= pagination.page %> of <%= pagination.totalPages %></span>
-
-              <% if (pagination.hasNext) { %>
-                <a href="<%= buildAdminUrl(pagination.nextPage) %>" class="button-secondary">Next</a>
-              <% } %>
-            </nav>
-          <% } %>
-        </section>
-
-        <section class="panel" id="users">
-          <h2>User Management</h2>
-
-          <form method="post" action="/admin/users" class="stack-form compact-form">
-            <%- include('../partials/csrf-field', { csrfToken: csrfToken }) %>
-            <input type="hidden" name="returnTo" value="<%= adminReturnTo %>" />
-            <label>
-              New username
-              <input type="text" name="username" required minlength="3" maxlength="32" />
-            </label>
-
-            <label>
-              New password
-              <input type="password" name="password" required minlength="8" />
-            </label>
-
-            <button type="submit">Add User</button>
-          </form>
-
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Username</th>
-                  <th>Created</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                <% for (const user of users) { %>
-                  <tr>
-                    <td><%= user.username %></td>
-                    <td><%= user.createdAt %></td>
-                    <td>
-                      <% if (currentUser && currentUser.id === user.id) { %>
-                        <span class="muted">Current user</span>
-                      <% } else { %>
-                        <form method="post" action="/admin/users/<%= user.id %>/delete" data-confirm="Delete this user?">
-                          <%- include('../partials/csrf-field', { csrfToken: csrfToken }) %>
-                          <input type="hidden" name="returnTo" value="<%= adminReturnTo %>" />
-                          <button type="submit" class="button-danger">Delete</button>
-                        </form>
-                      <% } %>
-                    </td>
-                  </tr>
-                <% } %>
-              </tbody>
-            </table>
-          </div>
-        </section>
+          </section>
+        <% } %>
       </main>
 
       <%- include('../partials/site-footer') %>

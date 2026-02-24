@@ -192,6 +192,7 @@ img {
 }
 
 .filter-grid {
+  align-items: start;
   display: grid;
   gap: 0.85rem;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -210,6 +211,36 @@ img {
   flex-wrap: wrap;
   gap: 0.75rem 1rem;
   justify-content: space-between;
+}
+
+.admin-nav {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding: 0.8rem 1.05rem;
+}
+
+.admin-nav-link {
+  border: 1px solid var(--line);
+  color: var(--ink);
+  display: inline-block;
+  font-family: "Montserrat", "Arial Narrow", Arial, sans-serif;
+  font-size: 0.9rem;
+  font-weight: 700;
+  padding: 0.35rem 0.75rem;
+}
+
+.admin-nav-link:hover,
+.admin-nav-link:focus {
+  border-color: var(--segulah-purple);
+  text-decoration: none;
+}
+
+.admin-nav-link.is-active {
+  background: var(--segulah-purple);
+  border-color: var(--segulah-purple);
+  color: #fff;
 }
 
 .stack-form {
@@ -364,6 +395,13 @@ button:focus {
   vertical-align: middle;
 }
 
+.result-tags-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.35rem;
+}
+
 .tag-chip {
   background: #f1eaf5;
   border: 1px solid #d6c6df;
@@ -449,6 +487,19 @@ td {
 
 td form {
   margin-top: 0.45rem;
+}
+
+.user-password-form {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0;
+}
+
+.user-password-form input[type="password"] {
+  max-width: 12rem;
+  min-width: 9.5rem;
 }
 
 th {

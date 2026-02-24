@@ -18,6 +18,7 @@ const {
   getUserById,
   listUsers,
   deleteUser,
+  updateUserPassword,
   getLoginSecurityRecord,
   upsertLoginSecurityRecord,
   clearLoginSecurityRecord,
@@ -274,6 +275,11 @@ const SORT_OPTIONS = [
   { value: "title_asc", label: "Title (A-Z)" },
   { value: "title_desc", label: "Title (Z-A)" }
 ];
+const ADMIN_NAV_ITEMS = [
+  { key: "add", label: "Add Niggun", href: "/admin/niggunim/new" },
+  { key: "existing", label: "Existing Niggunim", href: "/admin/niggunim" },
+  { key: "users", label: "User Management", href: "/admin/users" }
+];
 const SORT_VALUES = new Set(SORT_OPTIONS.map((option) => option.value));
 const DEFAULT_SORT_KEY = "newest";
 const PUBLIC_PAGE_SIZE = Math.min(100, toPositiveInt(process.env.PUBLIC_PAGE_SIZE, 12));
@@ -508,6 +514,13 @@ function normalizeAdminReturnTo(rawReturnTo, fallback = "/admin") {
   return `${parsed.pathname}${parsed.search}`;
 }
 
+function buildAdminNavigation(activeKey) {
+  return ADMIN_NAV_ITEMS.map((item) => ({
+    ...item,
+    active: item.key === activeKey
+  }));
+}
+
 function normalizeFilters(query) {
   const searchQuery = sanitizeText(query.q || "");
   const tempo = sanitizeText(query.tempo || "");
@@ -725,6 +738,22 @@ app.post("/admin/logout", requireCsrfToken, (req, res) => {
 });
 
 app.get("/admin", requireAuth, (req, res) => {
+  return res.redirect("/admin/niggunim/new");
+});
+
+app.get("/admin/niggunim/new", requireAuth, (req, res) => {
+  return res.render("admin/dashboard", {
+    adminSection: "add",
+    adminNavigation: buildAdminNavigation("add"),
+    adminReturnTo: "/admin/niggunim/new",
+    tempoOptions: TEMPO_OPTIONS,
+    keyOptions: MUSICAL_KEY_OPTIONS,
+    occasionOptions: OCCASION_TAG_OPTIONS,
+    prayerTimeOptions: PRAYER_TIME_TAG_OPTIONS
+  });
+});
+
+app.get("/admin/niggunim", requireAuth, (req, res) => {
   const filters = normalizeFilters(req.query);
   const sortKey = normalizeSortKey(req.query.sort);
   const requestedPage = normalizePage(req.query.page);
@@ -740,17 +769,13 @@ app.get("/admin", requireAuth, (req, res) => {
   const totalCount = countNiggunim(listFilters);
   const pagination = buildPagination(totalCount, requestedPage, ADMIN_PAGE_SIZE);
 
-  const users = listUsers();
   const singers = listSingers();
   const authors = listAuthors();
-  const niggunim = listNiggunim(
-    listFilters,
-    {
-      sortKey,
-      limit: ADMIN_PAGE_SIZE,
-      offset: pagination.offset
-    }
-  );
+  const niggunim = listNiggunim(listFilters, {
+    sortKey,
+    limit: ADMIN_PAGE_SIZE,
+    offset: pagination.offset
+  });
   const queryState = {
     q: filters.searchQuery,
     tempo: filters.tempo,
@@ -766,11 +791,12 @@ app.get("/admin", requireAuth, (req, res) => {
       ...queryState,
       page: pageNumber > 1 ? String(pageNumber) : ""
     });
-  const buildAdminUrl = (pageNumber = pagination.page) => toPathWithQuery("/admin", buildAdminQuery(pageNumber));
-  const adminReturnTo = toPathWithQuery("/admin", buildAdminQuery(pagination.page));
+  const buildAdminUrl = (pageNumber = pagination.page) => toPathWithQuery("/admin/niggunim", buildAdminQuery(pageNumber));
+  const adminReturnTo = toPathWithQuery("/admin/niggunim", buildAdminQuery(pagination.page));
 
   return res.render("admin/dashboard", {
-    users,
+    adminSection: "existing",
+    adminNavigation: buildAdminNavigation("existing"),
     niggunim,
     filters,
     singers,
@@ -788,8 +814,23 @@ app.get("/admin", requireAuth, (req, res) => {
   });
 });
 
+app.get("/admin/users", requireAuth, (req, res) => {
+  const users = listUsers();
+
+  return res.render("admin/dashboard", {
+    adminSection: "users",
+    adminNavigation: buildAdminNavigation("users"),
+    users,
+    adminReturnTo: "/admin/users",
+    tempoOptions: TEMPO_OPTIONS,
+    keyOptions: MUSICAL_KEY_OPTIONS,
+    occasionOptions: OCCASION_TAG_OPTIONS,
+    prayerTimeOptions: PRAYER_TIME_TAG_OPTIONS
+  });
+});
+
 app.post("/admin/users", requireAuth, requireCsrfToken, (req, res) => {
-  const returnTo = normalizeAdminReturnTo(req.body.returnTo, "/admin");
+  const returnTo = normalizeAdminReturnTo(req.body.returnTo, "/admin/users");
   const username = sanitizeText(req.body.username || "");
   const password = req.body.password || "";
 
@@ -815,8 +856,42 @@ app.post("/admin/users", requireAuth, requireCsrfToken, (req, res) => {
   return res.redirect(returnTo);
 });
 
+app.post("/admin/users/:id/password", requireAuth, requireCsrfToken, (req, res) => {
+  const returnTo = normalizeAdminReturnTo(req.body.returnTo, "/admin/users");
+  const userId = Number(req.params.id);
+  const password = req.body.password || "";
+
+  if (!Number.isInteger(userId) || userId <= 0) {
+    setFlash(req, "error", "Invalid user id.");
+    return res.redirect(returnTo);
+  }
+
+  if (!validatePassword(password)) {
+    setFlash(req, "error", "Password must be at least 8 characters.");
+    return res.redirect(returnTo);
+  }
+
+  const targetUser = getUserById(userId);
+  if (!targetUser) {
+    setFlash(req, "error", "User not found.");
+    return res.redirect(returnTo);
+  }
+
+  const passwordHash = bcrypt.hashSync(password, 12);
+  const changes = updateUserPassword(userId, passwordHash);
+
+  if (!changes) {
+    setFlash(req, "error", "Unable to reset password.");
+    return res.redirect(returnTo);
+  }
+
+  clearLoginSecurityRecord("username", targetUser.username.toLowerCase());
+  setFlash(req, "success", `Password reset for \"${targetUser.username}\".`);
+  return res.redirect(returnTo);
+});
+
 app.post("/admin/users/:id/delete", requireAuth, requireCsrfToken, (req, res) => {
-  const returnTo = normalizeAdminReturnTo(req.body.returnTo, "/admin");
+  const returnTo = normalizeAdminReturnTo(req.body.returnTo, "/admin/users");
   const userId = Number(req.params.id);
 
   if (!Number.isInteger(userId) || userId <= 0) {
@@ -869,11 +944,11 @@ function createUploadMiddleware(defaultRedirect) {
   };
 }
 
-const uploadForCreate = createUploadMiddleware("/admin");
+const uploadForCreate = createUploadMiddleware("/admin/niggunim/new");
 const uploadForEdit = createUploadMiddleware((req) => `/admin/niggunim/${req.params.id}/edit`);
 
 app.post("/admin/niggunim", requireAuth, uploadForCreate, requireCsrfToken, async (req, res) => {
-  const returnTo = normalizeAdminReturnTo(req.body.returnTo, "/admin");
+  const returnTo = normalizeAdminReturnTo(req.body.returnTo, "/admin/niggunim/new");
   const title = sanitizeText(req.body.title || "");
   const notes = sanitizeText(req.body.notes || "");
   const tempo = sanitizeText(req.body.tempo || "");
@@ -1001,7 +1076,7 @@ app.post("/admin/niggunim", requireAuth, uploadForCreate, requireCsrfToken, asyn
 
 app.get("/admin/niggunim/:id/edit", requireAuth, (req, res) => {
   const niggunId = Number(req.params.id);
-  const returnTo = normalizeAdminReturnTo(req.query.returnTo, "/admin");
+  const returnTo = normalizeAdminReturnTo(req.query.returnTo, "/admin/niggunim");
 
   if (!Number.isInteger(niggunId) || niggunId <= 0) {
     setFlash(req, "error", "Invalid niggun id.");
@@ -1026,7 +1101,7 @@ app.get("/admin/niggunim/:id/edit", requireAuth, (req, res) => {
 
 app.post("/admin/niggunim/:id", requireAuth, uploadForEdit, requireCsrfToken, async (req, res) => {
   const niggunId = Number(req.params.id);
-  const returnTo = normalizeAdminReturnTo(req.body.returnTo, "/admin");
+  const returnTo = normalizeAdminReturnTo(req.body.returnTo, "/admin/niggunim");
   const title = sanitizeText(req.body.title || "");
   const notes = sanitizeText(req.body.notes || "");
   const tempo = sanitizeText(req.body.tempo || "");
@@ -1182,7 +1257,7 @@ app.post("/admin/niggunim/:id", requireAuth, uploadForEdit, requireCsrfToken, as
 });
 
 app.post("/admin/niggunim/:id/delete", requireAuth, requireCsrfToken, (req, res) => {
-  const returnTo = normalizeAdminReturnTo(req.body.returnTo, "/admin");
+  const returnTo = normalizeAdminReturnTo(req.body.returnTo, "/admin/niggunim");
   const niggunId = Number(req.params.id);
 
   if (!Number.isInteger(niggunId) || niggunId <= 0) {
@@ -1210,7 +1285,7 @@ app.use((error, req, res, next) => {
   console.error(error);
   if (req.path.startsWith("/admin")) {
     setFlash(req, "error", "Unexpected server error.");
-    return res.redirect("/admin");
+    return res.redirect("/admin/niggunim/new");
   }
 
   return res.status(500).send("Internal server error");
