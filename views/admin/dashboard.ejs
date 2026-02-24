@@ -113,18 +113,102 @@
         <section class="panel">
           <div class="panel-head">
             <h2>Existing Niggunim (<%= pagination.totalCount %>)</h2>
-            <form method="get" action="/admin" class="sort-form">
-              <label>
-                Sort
-                <select name="sort">
-                  <% for (const option of sortOptions) { %>
-                    <option value="<%= option.value %>" <%= sortKey === option.value ? 'selected' : '' %>><%= option.label %></option>
-                  <% } %>
-                </select>
-              </label>
-              <button type="submit">Apply</button>
-            </form>
           </div>
+
+          <form method="get" action="/admin" class="filter-grid">
+            <label>
+              Search title, notes, singer, or author
+              <input type="text" name="q" value="<%= filters.searchQuery %>" placeholder="e.g. Ahavat Olam" />
+            </label>
+
+            <label>
+              Tempo
+              <select name="tempo">
+                <option value="">All</option>
+                <% for (const tempo of tempoOptions) { %>
+                  <option value="<%= tempo %>" <%= filters.tempo === tempo ? 'selected' : '' %>><%= tempo %></option>
+                <% } %>
+              </select>
+            </label>
+
+            <label>
+              Key
+              <select name="key">
+                <option value="">All</option>
+                <% for (const key of keyOptions) { %>
+                  <option value="<%= key %>" <%= filters.musicalKey === key ? 'selected' : '' %>><%= key %></option>
+                <% } %>
+              </select>
+            </label>
+
+            <label>
+              Singer
+              <select name="singer">
+                <option value="">All</option>
+                <% for (const singer of singers) { %>
+                  <option value="<%= singer %>" <%= filters.singer === singer ? 'selected' : '' %>><%= singer %></option>
+                <% } %>
+              </select>
+            </label>
+
+            <label>
+              Author
+              <select name="author">
+                <option value="">All</option>
+                <% for (const author of authors) { %>
+                  <option value="<%= author %>" <%= filters.author === author ? 'selected' : '' %>><%= author %></option>
+                <% } %>
+              </select>
+            </label>
+
+            <label>
+              Sort
+              <select name="sort">
+                <% for (const option of sortOptions) { %>
+                  <option value="<%= option.value %>" <%= sortKey === option.value ? 'selected' : '' %>><%= option.label %></option>
+                <% } %>
+              </select>
+            </label>
+
+            <fieldset class="checkbox-fieldset">
+              <legend>Occasion Tags</legend>
+              <div class="checkbox-group">
+                <% for (const occasion of occasionOptions) { %>
+                  <label class="checkbox-item">
+                    <input
+                      type="checkbox"
+                      name="occasions"
+                      value="<%= occasion %>"
+                      <%= filters.occasions.includes(occasion) ? 'checked' : '' %>
+                    />
+                    <span><%= occasion %></span>
+                  </label>
+                <% } %>
+              </div>
+            </fieldset>
+
+            <fieldset class="checkbox-fieldset">
+              <legend>Prayer Tags</legend>
+              <div class="checkbox-group">
+                <% for (const prayerTime of prayerTimeOptions) { %>
+                  <label class="checkbox-item">
+                    <input
+                      type="checkbox"
+                      name="prayerTimes"
+                      value="<%= prayerTime %>"
+                      <%= filters.prayerTimes.includes(prayerTime) ? 'checked' : '' %>
+                    />
+                    <span><%= prayerTime %></span>
+                  </label>
+                <% } %>
+              </div>
+            </fieldset>
+
+            <div class="filter-actions">
+              <button type="submit">Apply Filters</button>
+              <a href="/admin" class="button-secondary">Clear</a>
+            </div>
+          </form>
 
           <% if (pagination.totalCount > 0) { %>
             <% const pageStart = pagination.offset + 1; %>
@@ -221,6 +305,7 @@
 
           <form method="post" action="/admin/users" class="stack-form compact-form">
             <%- include('../partials/csrf-field', { csrfToken: csrfToken }) %>
+            <input type="hidden" name="returnTo" value="<%= adminReturnTo %>" />
             <label>
               New username
               <input type="text" name="username" required minlength="3" maxlength="32" />
@@ -254,6 +339,7 @@
                       <% } else { %>
                         <form method="post" action="/admin/users/<%= user.id %>/delete" data-confirm="Delete this user?">
                           <%- include('../partials/csrf-field', { csrfToken: csrfToken }) %>
+                          <input type="hidden" name="returnTo" value="<%= adminReturnTo %>" />
                           <button type="submit" class="button-danger">Delete</button>
                         </form>
                       <% } %>
@@ -265,6 +351,8 @@
           </div>
         </section>
       </main>
+
+      <%- include('../partials/site-footer') %>
     </div>
   </body>
 </html>

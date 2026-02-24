@@ -80,6 +80,24 @@ img {
   padding: 0.8rem 0;
 }
 
+.site-footer {
+  border-top: 1px solid var(--line);
+  margin-top: 1rem;
+  padding: 0.85rem 0;
+}
+
+.site-footer-text {
+  font-family: "Montserrat", "Arial Narrow", Arial, sans-serif;
+  font-size: 0.9rem;
+  margin: 0;
+  text-align: center;
+}
+
+.site-footer-link {
+  color: var(--segulah-purple);
+  font-weight: 700;
+}
+
 .brand-row {
   align-items: center;
   display: flex;
@@ -119,6 +137,53 @@ img {
 
 .panel-soft {
   background: var(--panel-soft);
+}
+
+.collapsible-panel {
+  padding: 0;
+}
+
+.filter-accordion {
+  display: block;
+}
+
+.filter-accordion-summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  list-style: none;
+  padding: 1.05rem;
+}
+
+.filter-accordion-summary::-webkit-details-marker {
+  display: none;
+}
+
+.filter-accordion-title {
+  color: var(--ink);
+  font-family: "Montserrat", "Arial Narrow", Arial, sans-serif;
+  font-size: 1.45rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.filter-accordion-toggle {
+  border-bottom: 2px solid var(--ink);
+  border-right: 2px solid var(--ink);
+  height: 0.55rem;
+  transform: rotate(45deg);
+  transition: transform 140ms ease;
+  width: 0.55rem;
+}
+
+.filter-accordion[open] .filter-accordion-toggle {
+  transform: rotate(-135deg);
+}
+
+.filter-accordion-content {
+  border-top: 1px solid var(--line);
+  padding: 1.05rem;
 }
 
 .detail-card audio {

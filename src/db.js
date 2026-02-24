@@ -15,6 +15,7 @@ if (!process.env.DB_PATH) {
 const db = new Database(dbPath);
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
+let niggunSearchFtsEnabled = false;
 
 function initializeSchema() {
   db.exec(`
@@ -108,6 +109,26 @@ function initializeSchema() {
     CREATE INDEX IF NOT EXISTS idx_niggun_prayers_prayer_time ON niggun_prayer_times(prayer_time_id);
     CREATE INDEX IF NOT EXISTS idx_login_security_locked_until ON login_security(locked_until);
   `);
+
+  try {
+    db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS niggun_search
+      USING fts5(
+        niggun_id UNINDEXED,
+        title,
+        notes,
+        singers,
+        authors,
+        occasions,
+        prayer_times
+      );
+    `);
+    niggunSearchFtsEnabled = true;
+    rebuildNiggunSearchIndex();
+  } catch (error) {
+    niggunSearchFtsEnabled = false;
+    console.warn("SQLite FTS5 unavailable; falling back to LIKE search.", error.message || error);
+  }
 }
 
 function splitCsv(csv) {
@@ -119,6 +140,164 @@ function splitCsv(csv) {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function csvToSearchText(csv) {
+  return splitCsv(csv).join(" ");
+}
+
+function toNiggunSearchRecord(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    niggunId: row.niggunId,
+    title: row.title || "",
+    notes: row.notes || "",
+    singers: csvToSearchText(row.singersCsv),
+    authors: csvToSearchText(row.authorsCsv),
+    occasions: csvToSearchText(row.occasionsCsv),
+    prayerTimes: csvToSearchText(row.prayerTimesCsv)
+  };
+}
+
+function fetchNiggunSearchRowById(niggunId) {
+  return (
+    db
+      .prepare(
+        `
+        SELECT
+          n.id AS niggunId,
+          n.title AS title,
+          COALESCE(n.notes, '') AS notes,
+          COALESCE(GROUP_CONCAT(DISTINCT s.name), '') AS singersCsv,
+          COALESCE(GROUP_CONCAT(DISTINCT a.name), '') AS authorsCsv,
+          COALESCE(GROUP_CONCAT(DISTINCT o.name), '') AS occasionsCsv,
+          COALESCE(GROUP_CONCAT(DISTINCT pt.name), '') AS prayerTimesCsv
+        FROM niggunim n
+        LEFT JOIN niggun_singers ns ON ns.niggun_id = n.id
+        LEFT JOIN singers s ON s.id = ns.singer_id
+        LEFT JOIN niggun_authors na ON na.niggun_id = n.id
+        LEFT JOIN authors a ON a.id = na.author_id
+        LEFT JOIN niggun_occasions no ON no.niggun_id = n.id
+        LEFT JOIN occasions o ON o.id = no.occasion_id
+        LEFT JOIN niggun_prayer_times npt ON npt.niggun_id = n.id
+        LEFT JOIN prayer_times pt ON pt.id = npt.prayer_time_id
+        WHERE n.id = ?
+        GROUP BY n.id
+        `
+      )
+      .get(niggunId) || null
+  );
+}
+
+function listNiggunSearchRows() {
+  return db
+    .prepare(
+      `
+      SELECT
+        n.id AS niggunId,
+        n.title AS title,
+        COALESCE(n.notes, '') AS notes,
+        COALESCE(GROUP_CONCAT(DISTINCT s.name), '') AS singersCsv,
+        COALESCE(GROUP_CONCAT(DISTINCT a.name), '') AS authorsCsv,
+        COALESCE(GROUP_CONCAT(DISTINCT o.name), '') AS occasionsCsv,
+        COALESCE(GROUP_CONCAT(DISTINCT pt.name), '') AS prayerTimesCsv
+      FROM niggunim n
+      LEFT JOIN niggun_singers ns ON ns.niggun_id = n.id
+      LEFT JOIN singers s ON s.id = ns.singer_id
+      LEFT JOIN niggun_authors na ON na.niggun_id = n.id
+      LEFT JOIN authors a ON a.id = na.author_id
+      LEFT JOIN niggun_occasions no ON no.niggun_id = n.id
+      LEFT JOIN occasions o ON o.id = no.occasion_id
+      LEFT JOIN niggun_prayer_times npt ON npt.niggun_id = n.id
+      LEFT JOIN prayer_times pt ON pt.id = npt.prayer_time_id
+      GROUP BY n.id
+      `
+    )
+    .all();
+}
+
+function deleteNiggunSearchRecord(niggunId) {
+  if (!niggunSearchFtsEnabled) {
+    return;
+  }
+
+  db.prepare("DELETE FROM niggun_search WHERE niggun_id = ?").run(niggunId);
+}
+
+function upsertNiggunSearchRecord(niggunId) {
+  if (!niggunSearchFtsEnabled) {
+    return;
+  }
+
+  const row = fetchNiggunSearchRowById(niggunId);
+  deleteNiggunSearchRecord(niggunId);
+
+  if (!row) {
+    return;
+  }
+
+  const record = toNiggunSearchRecord(row);
+  db.prepare(
+    `INSERT INTO niggun_search (
+      niggun_id,
+      title,
+      notes,
+      singers,
+      authors,
+      occasions,
+      prayer_times
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    record.niggunId,
+    record.title,
+    record.notes,
+    record.singers,
+    record.authors,
+    record.occasions,
+    record.prayerTimes
+  );
+}
+
+const rebuildNiggunSearchIndexTxn = db.transaction(() => {
+  db.prepare("DELETE FROM niggun_search").run();
+
+  const insert = db.prepare(
+    `INSERT INTO niggun_search (
+      niggun_id,
+      title,
+      notes,
+      singers,
+      authors,
+      occasions,
+      prayer_times
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?)`
+  );
+
+  for (const row of listNiggunSearchRows()) {
+    const record = toNiggunSearchRecord(row);
+    insert.run(
+      record.niggunId,
+      record.title,
+      record.notes,
+      record.singers,
+      record.authors,
+      record.occasions,
+      record.prayerTimes
+    );
+  }
+});
+
+function rebuildNiggunSearchIndex() {
+  if (!niggunSearchFtsEnabled) {
+    return;
+  }
+
+  rebuildNiggunSearchIndexTxn();
 }
 
 function toNiggunRecord(row) {
@@ -372,6 +551,7 @@ const createNiggunTxn = db.transaction((payload) => {
 
   const niggunId = niggunResult.lastInsertRowid;
   insertNiggunLinks(niggunId, payload);
+  upsertNiggunSearchRecord(niggunId);
 
   return niggunId;
 });
@@ -422,6 +602,7 @@ const updateNiggunTxn = db.transaction((payload) => {
   db.prepare("DELETE FROM niggun_prayer_times WHERE niggun_id = ?").run(payload.id);
 
   insertNiggunLinks(payload.id, payload);
+  upsertNiggunSearchRecord(payload.id);
   cleanupUnusedLookupTables();
 
   return {
@@ -435,31 +616,61 @@ function updateNiggun(payload) {
   return updateNiggunTxn(payload);
 }
 
+function toFtsMatchQuery(rawSearchQuery) {
+  if (!rawSearchQuery) {
+    return "";
+  }
+
+  const tokens = String(rawSearchQuery)
+    .split(/\s+/)
+    .map((token) => token.replace(/[^\p{L}\p{N}_'-]/gu, "").trim())
+    .filter((token) => token && /[\p{L}\p{N}]/u.test(token))
+    .slice(0, 10);
+
+  if (tokens.length === 0) {
+    return "";
+  }
+
+  return tokens
+    .map((token) => `"${token.replace(/"/g, "\"\"")}"*`)
+    .join(" AND ");
+}
+
 function buildNiggunWhereClause(filters = {}) {
   const conditions = [];
   const params = [];
 
   if (filters.searchQuery) {
-    const pattern = `%${filters.searchQuery.toLowerCase()}%`;
-    conditions.push(`(
-      LOWER(n.title) LIKE ?
-      OR LOWER(COALESCE(n.notes, '')) LIKE ?
-      OR EXISTS (
-        SELECT 1
-        FROM niggun_singers ns2
-        JOIN singers s2 ON s2.id = ns2.singer_id
-        WHERE ns2.niggun_id = n.id
-          AND LOWER(s2.name) LIKE ?
-      )
-      OR EXISTS (
-        SELECT 1
-        FROM niggun_authors na2
-        JOIN authors a2 ON a2.id = na2.author_id
-        WHERE na2.niggun_id = n.id
-          AND LOWER(a2.name) LIKE ?
-      )
-    )`);
-    params.push(pattern, pattern, pattern, pattern);
+    const ftsQuery = toFtsMatchQuery(filters.searchQuery);
+    if (niggunSearchFtsEnabled && ftsQuery) {
+      conditions.push(`n.id IN (
+        SELECT niggun_id
+        FROM niggun_search
+        WHERE niggun_search MATCH ?
+      )`);
+      params.push(ftsQuery);
+    } else {
+      const pattern = `%${filters.searchQuery.toLowerCase()}%`;
+      conditions.push(`(
+        LOWER(n.title) LIKE ?
+        OR LOWER(COALESCE(n.notes, '')) LIKE ?
+        OR EXISTS (
+          SELECT 1
+          FROM niggun_singers ns2
+          JOIN singers s2 ON s2.id = ns2.singer_id
+          WHERE ns2.niggun_id = n.id
+            AND LOWER(s2.name) LIKE ?
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM niggun_authors na2
+          JOIN authors a2 ON a2.id = na2.author_id
+          WHERE na2.niggun_id = n.id
+            AND LOWER(a2.name) LIKE ?
+        )
+      )`);
+      params.push(pattern, pattern, pattern, pattern);
+    }
   }
 
   if (filters.tempo) {
@@ -669,6 +880,7 @@ const deleteNiggunTxn = db.transaction((niggunId) => {
     return null;
   }
 
+  deleteNiggunSearchRecord(niggunId);
   db.prepare("DELETE FROM niggunim WHERE id = ?").run(niggunId);
   cleanupUnusedLookupTables();
 

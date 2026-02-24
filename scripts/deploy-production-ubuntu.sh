@@ -152,14 +152,18 @@ ensure_app_user() {
 }
 
 checkout_or_update_repo() {
+  install -d -m 0755 "$APP_DIR"
+
   if [[ -d "$APP_DIR/.git" ]]; then
     log "Updating existing repository in $APP_DIR"
-    git -C "$APP_DIR" fetch origin "$BRANCH"
-    git -C "$APP_DIR" checkout "$BRANCH"
-    git -C "$APP_DIR" pull --ff-only origin "$BRANCH"
+    chown -R "$APP_USER:$APP_GROUP" "$APP_DIR"
+    runuser -u "$APP_USER" -- git -C "$APP_DIR" fetch origin "$BRANCH"
+    runuser -u "$APP_USER" -- git -C "$APP_DIR" checkout "$BRANCH"
+    runuser -u "$APP_USER" -- git -C "$APP_DIR" pull --ff-only origin "$BRANCH"
   else
     log "Cloning repository to $APP_DIR"
-    git clone --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
+    chown "$APP_USER:$APP_GROUP" "$APP_DIR"
+    runuser -u "$APP_USER" -- git clone --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
   fi
 
   chown -R "$APP_USER:$APP_GROUP" "$APP_DIR"

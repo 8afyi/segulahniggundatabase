@@ -16,10 +16,12 @@ Why this stack for MVP:
 ## Features
 - Public catalog open to everyone (no login)
 - Search by title/notes and filter by tempo/key/singer/author
+- SQLite FTS5-backed text search (with automatic fallback to LIKE if FTS5 is unavailable)
 - Additional tag filters:
   - Occasion tags: Weekday, Shabbat, Festivals, Rosh Chodesh, High Holidays
   - Prayer tags: Shacharit, Musaf, Minchah, Maariv
 - Public/admin list sorting and pagination
+- Admin catalog search/filter parity with public filters (query state preserved across pagination/actions)
 - Niggun detail card with built-in audio player
 - Admin auth with first-run setup flow
 - Admin user management (add/remove users)

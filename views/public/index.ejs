@@ -23,9 +23,13 @@
       <main class="wrap shell-main">
         <%- include('../partials/flash', { flash: flash }) %>
 
-        <section class="panel panel-soft">
-          <h2>Find Niggunim</h2>
-          <form method="get" action="/" class="filter-grid">
+        <section class="panel panel-soft collapsible-panel">
+          <details class="filter-accordion" open>
+            <summary class="filter-accordion-summary">
+              <span class="filter-accordion-title">Find Niggunim</span>
+              <span class="filter-accordion-toggle" aria-hidden="true"></span>
+            </summary>
+            <form method="get" action="/" class="filter-grid filter-accordion-content">
             <label>
               Search title, notes, singer, or author
               <input type="text" name="q" value="<%= filters.searchQuery %>" placeholder="e.g. Ahavat Olam" />
@@ -118,7 +122,8 @@
               <button type="submit">Apply Filters</button>
               <a href="/" class="button-secondary">Clear</a>
             </div>
-          </form>
+            </form>
+          </details>
         </section>
 
         <section>
@@ -135,45 +140,49 @@
               <p>No niggunim matched your search.</p>
             </div>
           <% } else { %>
-            <div class="card-grid">
-              <% for (const niggun of niggunim) { %>
-                <% const notesPreview = niggun.notes && niggun.notes.length > 180 ? `${niggun.notes.slice(0, 180)}...` : niggun.notes; %>
-                <article class="card">
-                  <h3><a href="/niggunim/<%= niggun.id %>"><%= niggun.title %></a></h3>
-                  <p><strong>Singers:</strong> <%= niggun.singers.join(', ') %></p>
-                  <p><strong>Authors:</strong> <%= niggun.authors.join(', ') %></p>
-                  <div class="tag-row">
-                    <strong>Occasion Tags:</strong>
-                    <% if (niggun.occasions.length) { %>
-                      <div class="tag-list">
-                        <% for (const tag of niggun.occasions) { %>
-                          <span class="tag-chip"><%= tag %></span>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Title</th>
+                    <th>Authors</th>
+                    <th>Occasion Tags</th>
+                    <th>Prayer Tags</th>
+                    <th>Tempo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% for (const niggun of niggunim) { %>
+                    <tr>
+                      <td><a href="/niggunim/<%= niggun.id %>"><%= niggun.title %></a></td>
+                      <td><%= niggun.authors.join(', ') %></td>
+                      <td>
+                        <% if (niggun.occasions.length) { %>
+                          <div class="tag-list">
+                            <% for (const tag of niggun.occasions) { %>
+                              <span class="tag-chip"><%= tag %></span>
+                            <% } %>
+                          </div>
+                        <% } else { %>
+                          N/A
                         <% } %>
-                      </div>
-                    <% } else { %>
-                      <span>N/A</span>
-                    <% } %>
-                  </div>
-                  <div class="tag-row">
-                    <strong>Prayer Tags:</strong>
-                    <% if (niggun.prayerTimes.length) { %>
-                      <div class="tag-list">
-                        <% for (const tag of niggun.prayerTimes) { %>
-                          <span class="tag-chip"><%= tag %></span>
+                      </td>
+                      <td>
+                        <% if (niggun.prayerTimes.length) { %>
+                          <div class="tag-list">
+                            <% for (const tag of niggun.prayerTimes) { %>
+                              <span class="tag-chip"><%= tag %></span>
+                            <% } %>
+                          </div>
+                        <% } else { %>
+                          N/A
                         <% } %>
-                      </div>
-                    <% } else { %>
-                      <span>N/A</span>
-                    <% } %>
-                  </div>
-                  <p><strong>Tempo:</strong> <%= niggun.tempo || 'N/A' %></p>
-                  <p><strong>Key:</strong> <%= niggun.musicalKey || 'N/A' %></p>
-                  <% if (notesPreview) { %>
-                    <p><strong>Notes:</strong> <%= notesPreview %></p>
+                      </td>
+                      <td><%= niggun.tempo || 'N/A' %></td>
+                    </tr>
                   <% } %>
-                  <p><a href="/niggunim/<%= niggun.id %>" class="button-secondary">Open Card</a></p>
-                </article>
-              <% } %>
+                </tbody>
+              </table>
             </div>
           <% } %>
 
@@ -192,6 +201,8 @@
           <% } %>
         </section>
       </main>
+
+      <%- include('../partials/site-footer') %>
     </div>
   </body>
 </html>

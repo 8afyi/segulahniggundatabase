@@ -725,23 +725,45 @@ app.post("/admin/logout", requireCsrfToken, (req, res) => {
 });
 
 app.get("/admin", requireAuth, (req, res) => {
+  const filters = normalizeFilters(req.query);
   const sortKey = normalizeSortKey(req.query.sort);
   const requestedPage = normalizePage(req.query.page);
-  const totalCount = countNiggunim({});
+  const listFilters = {
+    searchQuery: filters.searchQuery,
+    tempo: filters.tempo,
+    musicalKey: filters.musicalKey,
+    singer: filters.singer,
+    author: filters.author,
+    occasions: filters.occasions,
+    prayerTimes: filters.prayerTimes
+  };
+  const totalCount = countNiggunim(listFilters);
   const pagination = buildPagination(totalCount, requestedPage, ADMIN_PAGE_SIZE);
 
   const users = listUsers();
+  const singers = listSingers();
+  const authors = listAuthors();
   const niggunim = listNiggunim(
-    {},
+    listFilters,
     {
       sortKey,
       limit: ADMIN_PAGE_SIZE,
       offset: pagination.offset
     }
   );
+  const queryState = {
+    q: filters.searchQuery,
+    tempo: filters.tempo,
+    key: filters.musicalKey,
+    singer: filters.singer,
+    author: filters.author,
+    occasions: filters.occasions,
+    prayerTimes: filters.prayerTimes,
+    sort: sortKey
+  };
   const buildAdminQuery = (pageNumber = pagination.page) =>
     buildQueryString({
-      sort: sortKey,
+      ...queryState,
       page: pageNumber > 1 ? String(pageNumber) : ""
     });
   const buildAdminUrl = (pageNumber = pagination.page) => toPathWithQuery("/admin", buildAdminQuery(pageNumber));
@@ -750,6 +772,9 @@ app.get("/admin", requireAuth, (req, res) => {
   return res.render("admin/dashboard", {
     users,
     niggunim,
+    filters,
+    singers,
+    authors,
     sortKey,
     sortOptions: SORT_OPTIONS,
     pagination,
@@ -764,17 +789,18 @@ app.get("/admin", requireAuth, (req, res) => {
 });
 
 app.post("/admin/users", requireAuth, requireCsrfToken, (req, res) => {
+  const returnTo = normalizeAdminReturnTo(req.body.returnTo, "/admin");
   const username = sanitizeText(req.body.username || "");
   const password = req.body.password || "";
 
   if (!validateUsername(username)) {
     setFlash(req, "error", "Username must be 3-32 chars and use only letters, numbers, _ or -.");
-    return res.redirect("/admin");
+    return res.redirect(returnTo);
   }
 
   if (!validatePassword(password)) {
     setFlash(req, "error", "Password must be at least 8 characters.");
-    return res.redirect("/admin");
+    return res.redirect(returnTo);
   }
 
   const passwordHash = bcrypt.hashSync(password, 12);
@@ -786,25 +812,26 @@ app.post("/admin/users", requireAuth, requireCsrfToken, (req, res) => {
     setFlash(req, "error", "Unable to add user. Username may already exist.");
   }
 
-  return res.redirect("/admin");
+  return res.redirect(returnTo);
 });
 
 app.post("/admin/users/:id/delete", requireAuth, requireCsrfToken, (req, res) => {
+  const returnTo = normalizeAdminReturnTo(req.body.returnTo, "/admin");
   const userId = Number(req.params.id);
 
   if (!Number.isInteger(userId) || userId <= 0) {
     setFlash(req, "error", "Invalid user id.");
-    return res.redirect("/admin");
+    return res.redirect(returnTo);
   }
 
   if (req.session.userId === userId) {
     setFlash(req, "error", "You cannot delete your own logged-in account.");
-    return res.redirect("/admin");
+    return res.redirect(returnTo);
   }
 
   if (countUsers() <= 1) {
     setFlash(req, "error", "Cannot delete the last remaining user.");
-    return res.redirect("/admin");
+    return res.redirect(returnTo);
   }
 
   const changes = deleteUser(userId);
@@ -815,7 +842,7 @@ app.post("/admin/users/:id/delete", requireAuth, requireCsrfToken, (req, res) =>
     setFlash(req, "success", "User deleted.");
   }
 
-  return res.redirect("/admin");
+  return res.redirect(returnTo);
 });
 
 function createUploadMiddleware(defaultRedirect) {
