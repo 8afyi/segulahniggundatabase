@@ -18,10 +18,20 @@
 
         <article class="panel detail-card">
           <h2><%= niggun.title %></h2>
-          <p><strong>Singers:</strong> <%= niggun.singers.join(', ') %></p>
-          <p><strong>Authors:</strong> <%= niggun.authors.join(', ') %></p>
+
+                    <div>
+\            <audio controls preload="metadata" src="/media/<%= niggun.audioPath %>"></audio>
+            <% if (niggun.originalFilename) { %>
+              <p><small>Source file: <%= niggun.originalFilename %></small></p>
+            <% } %>
+          </div>
+
+
+          <p><strong>Singers:</strong> <%= niggun.singers.join(', ') %> / 
+          <p><strong>Authors:</strong> <%= niggun.authors.join(', ') %> /
+          Uploaded <%= uploadedDateLabel || 'N/A' %></p>
           <div class="tag-row">
-            <strong>Service Tags:</strong>
+            <strong>Tags:</strong>
             <% if (niggun.occasions.length) { %>
               <div class="tag-list">
                 <% for (const tag of niggun.occasions) { %>
@@ -31,9 +41,7 @@
             <% } else { %>
               <span>N/A</span>
             <% } %>
-          </div>
-          <div class="tag-row">
-            <strong>Prayer Tags:</strong>
+
             <% if (niggun.prayerTimes.length) { %>
               <div class="tag-list">
                 <% for (const tag of niggun.prayerTimes) { %>
@@ -44,14 +52,12 @@
               <span>N/A</span>
             <% } %>
           </div>
-          <p><strong>Tempo:</strong> <%= niggun.tempo || 'N/A' %></p>
+          <p><strong>Tempo:</strong> <%= niggun.tempo || 'N/A' %> / 
           <p><strong>Key:</strong> <%= niggun.musicalKey || 'N/A' %></p>
-          <p><strong>Date Uploaded:</strong> <%= uploadedDateLabel || 'N/A' %></p>
 
           <% if (niggun.notes) { %>
             <div>
-              <h3>Notes</h3>
-              <p><%= niggun.notes %></p>
+              <p><b>Notes:</b> <%= niggun.notes %></p>
             </div>
           <% } %>
 
@@ -62,13 +68,6 @@
             </div>
           <% } %>
 
-          <div>
-            <h3>Listen</h3>
-            <audio controls preload="metadata" src="/media/<%= niggun.audioPath %>"></audio>
-            <% if (niggun.originalFilename) { %>
-              <p><small>Source file: <%= niggun.originalFilename %></small></p>
-            <% } %>
-          </div>
         </article>
       </main>
 
