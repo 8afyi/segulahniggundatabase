@@ -155,7 +155,7 @@
                   <% for (const niggun of niggunim) { %>
                     <tr>
                       <td>
-                        <a href="/niggunim/<%= niggun.id %>"><%= niggun.title %></a>
+                        <a href="<%= buildNiggunPublicPath(niggun) %>"><%= niggun.title %></a>
                         <% const tagItems = []; %>
                         <% for (const occasionTag of niggun.occasions) { %>
                           <% tagItems.push({ type: 'occasion', value: occasionTag }); %>

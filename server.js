@@ -601,6 +601,22 @@ function formatNiggunUploadedDate(createdAt) {
   return EASTERN_DATE_FORMATTER.format(parsedDate);
 }
 
+function toNiggunTitleSlug(title) {
+  const normalized = String(title || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/['’]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return normalized || "niggun";
+}
+
+function buildNiggunPublicPath(niggun) {
+  return `/niggunim/${niggun.id}-${toNiggunTitleSlug(niggun.title)}`;
+}
+
 app.get("/", (req, res) => {
   const keyOptions = listUsedMusicalKeys();
   const filters = normalizeFilters(req.query, keyOptions);
@@ -652,6 +668,7 @@ app.get("/", (req, res) => {
     pagination,
     buildPublicQuery,
     buildPublicUrl,
+    buildNiggunPublicPath,
     tempoOptions: TEMPO_OPTIONS,
     keyOptions,
     occasionOptions: OCCASION_TAG_OPTIONS,
@@ -661,8 +678,9 @@ app.get("/", (req, res) => {
   });
 });
 
-app.get("/niggunim/:id", (req, res) => {
-  const niggunId = Number(req.params.id);
+app.get(/^\/niggunim\/(\d+)(?:-([^/]+))?$/, (req, res) => {
+  const niggunId = Number(req.params[0]);
+  const requestedSlug = sanitizeText(req.params[1] || "").toLowerCase();
   if (!Number.isInteger(niggunId) || niggunId <= 0) {
     return res.status(404).render("public/not-found");
   }
@@ -670,6 +688,12 @@ app.get("/niggunim/:id", (req, res) => {
   const niggun = getNiggunById(niggunId);
   if (!niggun) {
     return res.status(404).render("public/not-found");
+  }
+
+  const canonicalSlug = toNiggunTitleSlug(niggun.title);
+  if (requestedSlug !== canonicalSlug) {
+    const queryString = buildQueryString(req.query || {});
+    return res.redirect(toPathWithQuery(buildNiggunPublicPath(niggun), queryString));
   }
 
   const uploadedDateLabel = formatNiggunUploadedDate(niggun.createdAt);
@@ -873,6 +897,7 @@ app.get("/admin/niggunim", requireAuth, (req, res) => {
     pagination,
     buildAdminQuery,
     buildAdminUrl,
+    buildNiggunPublicPath,
     adminReturnTo,
     tempoOptions: TEMPO_OPTIONS,
     keyOptions,

@@ -248,7 +248,7 @@
                   <tbody>
                     <% for (const niggun of niggunim) { %>
                       <tr>
-                        <td><a href="/niggunim/<%= niggun.id %>" target="_blank" rel="noreferrer"><%= niggun.title %></a></td>
+                        <td><a href="<%= buildNiggunPublicPath(niggun) %>" target="_blank" rel="noreferrer"><%= niggun.title %></a></td>
                         <td><%= niggun.singers.join(', ') %></td>
                         <td><%= niggun.authors.join(', ') %></td>
                         <td>
