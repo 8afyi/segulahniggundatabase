@@ -21,17 +21,21 @@
 
                     <div>
             <audio controls preload="metadata" src="/media/<%= niggun.audioPath %>"></audio>
-            <% if (niggun.originalFilename) { %>
-              <p><small>Source file: <%= niggun.originalFilename %></small></p>
-            <% } %>
+
           </div>
 
 
-          <p><strong>Singers:</strong> <%= niggun.singers.join(', ') %> / 
-          <strong>Authors:</strong> <%= niggun.authors.join(', ') %> /
-          Uploaded <%= uploadedDateLabel || 'N/A' %></p>
+          <p>
+            <small>
+              <strong>Singers:</strong> <%= niggun.singers.join(', ') %> / 
+              <strong>Authors:</strong> <%= niggun.authors.join(', ') %> /
+              <strong>Tempo:</strong> <%= niggun.tempo || 'N/A' %> / 
+              <strong>Key:</strong> <%= niggun.musicalKey || 'N/A' %>
+              Uploaded <%= uploadedDateLabel || 'N/A' %>
+            </small>
+          </p>
+
           <div class="tag-row">
-            <strong>Tags:</strong>
             <% if (niggun.occasions.length) { %>
               <div class="tag-list">
                 <% for (const tag of niggun.occasions) { %>
@@ -52,8 +56,6 @@
               <span>N/A</span>
             <% } %>
           </div>
-          <p><strong>Tempo:</strong> <%= niggun.tempo || 'N/A' %> / 
-          <strong>Key:</strong> <%= niggun.musicalKey || 'N/A' %></p>
 
           <% if (niggun.notes) { %>
             <div>
