@@ -415,6 +415,31 @@ button:focus {
   padding: 0.2rem 0.55rem;
 }
 
+.tag-chip-link {
+  text-decoration: none;
+}
+
+.tag-chip-link:hover,
+.tag-chip-link:focus {
+  background: #e7dbef;
+  border-color: #b89ec8;
+  color: #3f1d50;
+  text-decoration: none;
+}
+
+.audio-preview-cell {
+  white-space: nowrap;
+}
+
+.audio-preview-button {
+  min-width: 5.5rem;
+  padding: 0.3rem 0.7rem;
+}
+
+.audio-preview-player {
+  display: none;
+}
+
 .sort-form {
   align-items: end;
   display: flex;

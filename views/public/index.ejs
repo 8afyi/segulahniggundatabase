@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Segulah Niggun Database</title>
     <link rel="stylesheet" href="/styles.css" />
+    <script src="/app.js" defer></script>
   </head>
   <body>
     <div class="site-shell">
@@ -147,6 +148,7 @@
                     <th>Title</th>
                     <th>Authors</th>
                     <th>Tempo</th>
+                    <th>Preview</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -154,11 +156,22 @@
                     <tr>
                       <td>
                         <a href="/niggunim/<%= niggun.id %>"><%= niggun.title %></a>
-                        <% const combinedTags = Array.from(new Set([...niggun.occasions, ...niggun.prayerTimes])); %>
+                        <% const tagItems = []; %>
+                        <% for (const occasionTag of niggun.occasions) { %>
+                          <% tagItems.push({ type: 'occasion', value: occasionTag }); %>
+                        <% } %>
+                        <% for (const prayerTimeTag of niggun.prayerTimes) { %>
+                          <% tagItems.push({ type: 'prayerTime', value: prayerTimeTag }); %>
+                        <% } %>
                         <div class="result-tags-line">
-                          <% if (combinedTags.length) { %>
-                            <% for (const tag of combinedTags) { %>
-                              <span class="tag-chip"><%= tag %></span>
+                          <% if (tagItems.length) { %>
+                            <% for (const tagItem of tagItems) { %>
+                              <a
+                                href="/?<%= tagItem.type === 'occasion' ? 'occasions' : 'prayerTimes' %>=<%= encodeURIComponent(tagItem.value) %>"
+                                class="tag-chip tag-chip-link"
+                              >
+                                <%= tagItem.value %>
+                              </a>
                             <% } %>
                           <% } else { %>
                             <span class="muted">No tags</span>
@@ -167,6 +180,20 @@
                       </td>
                       <td><%= niggun.authors.join(', ') %></td>
                       <td><%= niggun.tempo || 'N/A' %></td>
+                      <td class="audio-preview-cell">
+                        <button
+                          type="button"
+                          class="button-secondary audio-preview-button"
+                          data-audio-button
+                          data-play-label="Play"
+                          data-pause-label="Pause"
+                          aria-pressed="false"
+                          aria-label="Play preview for <%= niggun.title %>"
+                        >
+                          Play
+                        </button>
+                        <audio preload="none" src="/media/<%= niggun.audioPath %>" data-audio-player class="audio-preview-player"></audio>
+                      </td>
                     </tr>
                   <% } %>
                 </tbody>
