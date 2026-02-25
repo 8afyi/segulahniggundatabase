@@ -53,7 +53,7 @@
           </div>
           <p><strong>Tempo:</strong> <%= niggun.tempo || 'N/A' %></p>
           <p><strong>Key:</strong> <%= niggun.musicalKey || 'N/A' %></p>
-          <p><strong>Date Uploaded:</strong> <%= niggun.createdAt %></p>
+          <p><strong>Date Uploaded:</strong> <%= uploadedDateLabel || 'N/A' %></p>
 
           <% if (niggun.notes) { %>
             <div>

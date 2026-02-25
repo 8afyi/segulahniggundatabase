@@ -29,6 +29,7 @@ const {
   getNiggunById,
   listSingers,
   listAuthors,
+  listUsedMusicalKeys,
   deleteNiggun
 } = require("./src/db");
 const { requireAuth } = require("./src/middleware/auth");
@@ -320,6 +321,12 @@ const SORT_VALUES = new Set(SORT_OPTIONS.map((option) => option.value));
 const DEFAULT_SORT_KEY = "newest";
 const PUBLIC_PAGE_SIZE = Math.min(100, toPositiveInt(process.env.PUBLIC_PAGE_SIZE, 12));
 const ADMIN_PAGE_SIZE = Math.min(200, toPositiveInt(process.env.ADMIN_PAGE_SIZE, 25));
+const EASTERN_DATE_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  year: "numeric",
+  month: "long",
+  day: "numeric"
+});
 
 const LOGIN_FAILURE_LIMIT = toPositiveInt(process.env.LOGIN_FAILURE_LIMIT, 5);
 const LOGIN_FAILURE_WINDOW_MS = toPositiveInt(process.env.LOGIN_FAILURE_WINDOW_MINUTES, 15) * 60 * 1000;
@@ -557,7 +564,7 @@ function buildAdminNavigation(activeKey) {
   }));
 }
 
-function normalizeFilters(query) {
+function normalizeFilters(query, availableKeyOptions = MUSICAL_KEY_OPTIONS) {
   const searchQuery = sanitizeText(query.q || "");
   const tempo = sanitizeText(query.tempo || "");
   const musicalKey = sanitizeText(query.key || "");
@@ -569,7 +576,7 @@ function normalizeFilters(query) {
   return {
     searchQuery,
     tempo: TEMPO_OPTIONS.includes(tempo) ? tempo : "",
-    musicalKey: MUSICAL_KEY_OPTIONS.includes(musicalKey) ? musicalKey : "",
+    musicalKey: availableKeyOptions.includes(musicalKey) ? musicalKey : "",
     singer,
     author,
     occasions,
@@ -577,8 +584,26 @@ function normalizeFilters(query) {
   };
 }
 
+function formatNiggunUploadedDate(createdAt) {
+  const rawCreatedAt = sanitizeText(createdAt || "");
+  if (!rawCreatedAt) {
+    return "";
+  }
+
+  const isoBase = rawCreatedAt.includes("T") ? rawCreatedAt : rawCreatedAt.replace(" ", "T");
+  const hasTimezone = /(?:[zZ]|[+-]\d{2}:\d{2})$/.test(isoBase);
+  const isoWithTimezone = hasTimezone ? isoBase : `${isoBase}Z`;
+  const parsedDate = new Date(isoWithTimezone);
+  if (Number.isNaN(parsedDate.getTime())) {
+    return rawCreatedAt;
+  }
+
+  return EASTERN_DATE_FORMATTER.format(parsedDate);
+}
+
 app.get("/", (req, res) => {
-  const filters = normalizeFilters(req.query);
+  const keyOptions = listUsedMusicalKeys();
+  const filters = normalizeFilters(req.query, keyOptions);
   const sortKey = normalizeSortKey(req.query.sort);
   const requestedPage = normalizePage(req.query.page);
 
@@ -628,7 +653,7 @@ app.get("/", (req, res) => {
     buildPublicQuery,
     buildPublicUrl,
     tempoOptions: TEMPO_OPTIONS,
-    keyOptions: MUSICAL_KEY_OPTIONS,
+    keyOptions,
     occasionOptions: OCCASION_TAG_OPTIONS,
     prayerTimeOptions: PRAYER_TIME_TAG_OPTIONS,
     singers,
@@ -647,7 +672,12 @@ app.get("/niggunim/:id", (req, res) => {
     return res.status(404).render("public/not-found");
   }
 
-  return res.render("public/niggun", { niggun });
+  const uploadedDateLabel = formatNiggunUploadedDate(niggun.createdAt);
+
+  return res.render("public/niggun", {
+    niggun,
+    uploadedDateLabel
+  });
 });
 
 app.get("/admin/setup", (req, res) => {
@@ -790,7 +820,8 @@ app.get("/admin/niggunim/new", requireAuth, (req, res) => {
 });
 
 app.get("/admin/niggunim", requireAuth, (req, res) => {
-  const filters = normalizeFilters(req.query);
+  const keyOptions = listUsedMusicalKeys();
+  const filters = normalizeFilters(req.query, keyOptions);
   const sortKey = normalizeSortKey(req.query.sort);
   const requestedPage = normalizePage(req.query.page);
   const listFilters = {
@@ -844,7 +875,7 @@ app.get("/admin/niggunim", requireAuth, (req, res) => {
     buildAdminUrl,
     adminReturnTo,
     tempoOptions: TEMPO_OPTIONS,
-    keyOptions: MUSICAL_KEY_OPTIONS,
+    keyOptions,
     occasionOptions: OCCASION_TAG_OPTIONS,
     prayerTimeOptions: PRAYER_TIME_TAG_OPTIONS
   });

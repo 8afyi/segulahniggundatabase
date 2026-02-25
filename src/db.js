@@ -877,6 +877,19 @@ function listAuthors() {
     .map((row) => row.name);
 }
 
+function listUsedMusicalKeys() {
+  return db
+    .prepare(
+      `SELECT DISTINCT musical_key AS musicalKey
+       FROM niggunim
+       WHERE musical_key IS NOT NULL
+         AND TRIM(musical_key) <> ''
+       ORDER BY musical_key COLLATE NOCASE ASC`
+    )
+    .all()
+    .map((row) => row.musicalKey);
+}
+
 const deleteNiggunTxn = db.transaction((niggunId) => {
   const existing = db
     .prepare(
@@ -922,5 +935,6 @@ module.exports = {
   getNiggunById,
   listSingers,
   listAuthors,
+  listUsedMusicalKeys,
   deleteNiggun
 };
