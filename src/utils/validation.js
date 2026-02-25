@@ -71,6 +71,10 @@ function ensureHttpUrl(value) {
     return null;
   }
 
+  if (parsed.username || parsed.password) {
+    return null;
+  }
+
   return parsed.toString();
 }
 

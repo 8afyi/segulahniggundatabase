@@ -61,6 +61,7 @@ initializeSchema();
 const app = express();
 const projectRoot = __dirname;
 const isProduction = process.env.NODE_ENV === "production";
+const DEV_SESSION_SECRET = "dev-session-secret-change-me";
 
 function parseTrustProxySetting(rawValue) {
   if (rawValue === undefined || rawValue === null || rawValue === "") {
@@ -88,6 +89,29 @@ if (explicitTrustProxy !== null) {
 } else if (isProduction) {
   // Cloudflare -> Nginx -> Node
   app.set("trust proxy", 1);
+}
+
+function resolveSessionSecret() {
+  const configuredSecret = sanitizeText(process.env.SESSION_SECRET || "");
+
+  if (!configuredSecret) {
+    if (isProduction) {
+      throw new Error("SESSION_SECRET must be set in production.");
+    }
+
+    console.warn("SESSION_SECRET is not set. Using the development fallback secret.");
+    return DEV_SESSION_SECRET;
+  }
+
+  if (isProduction && configuredSecret === DEV_SESSION_SECRET) {
+    throw new Error("SESSION_SECRET cannot use the development fallback value in production.");
+  }
+
+  if (isProduction && configuredSecret.length < 32) {
+    throw new Error("SESSION_SECRET must be at least 32 characters in production.");
+  }
+
+  return configuredSecret;
 }
 
 app.set("view engine", "ejs");
@@ -165,7 +189,7 @@ if (useRedisSessions) {
 }
 
 const sessionOptions = {
-  secret: process.env.SESSION_SECRET || "dev-session-secret-change-me",
+  secret: resolveSessionSecret(),
   resave: false,
   saveUninitialized: false,
   proxy: isProduction,
@@ -239,11 +263,21 @@ function requireCsrfToken(req, res, next) {
   return next();
 }
 
-app.use((req, res, next) => {
-  res.locals.flash = req.session.flash || null;
-  delete req.session.flash;
+function attachAdminCsrfToken(req, res, next) {
+  if (req.method === "GET" || req.method === "HEAD") {
+    res.locals.csrfToken = ensureCsrfToken(req);
+  }
 
-  res.locals.csrfToken = ensureCsrfToken(req);
+  return next();
+}
+
+app.use((req, res, next) => {
+  const flash = req.session.flash || null;
+  res.locals.flash = flash;
+  if (flash) {
+    delete req.session.flash;
+  }
+  res.locals.csrfToken = null;
 
   if (req.session.userId) {
     const user = getUserById(req.session.userId);
@@ -259,6 +293,8 @@ app.use((req, res, next) => {
 
   next();
 });
+
+app.use("/admin", attachAdminCsrfToken);
 
 function toPositiveInt(rawValue, fallback) {
   const parsed = Number.parseInt(rawValue, 10);
