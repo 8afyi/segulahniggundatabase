@@ -1,4 +1,12 @@
-<% const action = headerAction || null; %>
+<%
+  const action = typeof headerAction === "undefined" ? null : headerAction;
+  const pageCsrfToken = typeof csrfToken === "undefined" ? "" : csrfToken;
+  const metaText = typeof headerMetaText === "undefined" ? "" : headerMetaText;
+  const metaPrefix = typeof headerMetaPrefix === "undefined" ? "" : headerMetaPrefix;
+  const metaStrong = typeof headerMetaStrong === "undefined" ? "" : headerMetaStrong;
+  const metaSuffix = typeof headerMetaSuffix === "undefined" ? "" : headerMetaSuffix;
+  const metaClass = typeof headerMetaClass === "undefined" ? "site-tagline" : headerMetaClass;
+%>
 <header class="site-header">
   <div class="wrap">
     <div class="brand-row">
@@ -8,7 +16,7 @@
 
       <% if (action && action.type === "signout") { %>
         <form method="post" action="<%= action.action || '/admin/logout' %>">
-          <%- include("./csrf-field", { csrfToken: action.csrfToken || csrfToken }) %>
+          <%- include("./csrf-field", { csrfToken: action.csrfToken || pageCsrfToken }) %>
           <button type="submit" class="<%= action.className || 'button-secondary' %>"><%= action.label || "Sign out" %></button>
         </form>
       <% } else if (action && action.type === "link") { %>
@@ -16,12 +24,12 @@
       <% } %>
     </div>
 
-    <% if (headerMetaText || headerMetaPrefix || headerMetaStrong || headerMetaSuffix) { %>
-      <p class="<%= headerMetaClass || 'site-tagline' %>">
-        <% if (headerMetaText) { %><%= headerMetaText %><% } %>
-        <% if (headerMetaPrefix) { %><%= headerMetaPrefix %><% } %>
-        <% if (headerMetaStrong) { %><strong><%= headerMetaStrong %></strong><% } %>
-        <% if (headerMetaSuffix) { %><%= headerMetaSuffix %><% } %>
+    <% if (metaText || metaPrefix || metaStrong || metaSuffix) { %>
+      <p class="<%= metaClass %>">
+        <% if (metaText) { %><%= metaText %><% } %>
+        <% if (metaPrefix) { %><%= metaPrefix %><% } %>
+        <% if (metaStrong) { %><strong><%= metaStrong %></strong><% } %>
+        <% if (metaSuffix) { %><%= metaSuffix %><% } %>
       </p>
     <% } %>
   </div>
