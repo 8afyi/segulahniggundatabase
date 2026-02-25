@@ -9,20 +9,12 @@
   </head>
   <body>
     <div class="site-shell">
-      <header class="site-header">
-        <div class="wrap">
-          <div class="brand-row">
-            <a href="/" class="brand-link" aria-label="Segulah Niggun Database home">
-              <img src="/assets/segulah-wide.jpg" alt="Segulah" class="brand-logo" />
-            </a>
-            <form method="post" action="/admin/logout">
-              <%- include('../partials/csrf-field', { csrfToken: csrfToken }) %>
-              <button type="submit" class="button-secondary">Sign out</button>
-            </form>
-          </div>
-          <p class="admin-meta">Admin dashboard. Signed in as <strong><%= currentUser ? currentUser.username : '' %></strong></p>
-        </div>
-      </header>
+      <%- include("../partials/site-header", {
+        headerAction: { type: "signout", action: "/admin/logout", label: "Sign out", csrfToken: csrfToken },
+        headerMetaClass: "admin-meta",
+        headerMetaPrefix: "Admin dashboard. Signed in as ",
+        headerMetaStrong: currentUser ? currentUser.username : ""
+      }) %>
 
       <main class="wrap shell-main">
         <%- include('../partials/flash', { flash: flash }) %>

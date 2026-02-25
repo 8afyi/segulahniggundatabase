@@ -8,17 +8,11 @@
   </head>
   <body>
     <div class="site-shell">
-      <header class="site-header">
-        <div class="wrap">
-          <div class="brand-row">
-            <a href="/" class="brand-link" aria-label="Segulah Niggun Database home">
-              <img src="/assets/segulah-wide.jpg" alt="Segulah" class="brand-logo" />
-            </a>
-            <a href="<%= returnTo %>" class="button-secondary">Back to Admin</a>
-          </div>
-          <p class="admin-meta">Edit niggun and optionally replace audio.</p>
-        </div>
-      </header>
+      <%- include("../partials/site-header", {
+        headerAction: { type: "link", href: returnTo, label: "Back to Admin" },
+        headerMetaClass: "admin-meta",
+        headerMetaText: "Edit niggun and optionally replace audio."
+      }) %>
 
       <main class="wrap shell-main">
         <%- include('../partials/flash', { flash: flash }) %>

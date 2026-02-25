@@ -8,17 +8,10 @@
   </head>
   <body>
     <div class="site-shell">
-      <header class="site-header">
-        <div class="wrap">
-          <div class="brand-row">
-            <a href="/" class="brand-link" aria-label="Segulah Niggun Database home">
-              <img src="/assets/segulah-wide.jpg" alt="Segulah" class="brand-logo" />
-            </a>
-            <a href="/admin/login" class="button-secondary">Admin</a>
-          </div>
-          <p class="site-tagline">Niggun detail card and audio playback.</p>
-        </div>
-      </header>
+      <%- include("../partials/site-header", {
+        headerAction: { type: "link", href: "/admin/login", label: "Admin" },
+        headerMetaText: "Niggun detail card and audio playback."
+      }) %>
 
       <main class="wrap shell-main">
         <p><a href="/" class="button-secondary">Back to list</a></p>

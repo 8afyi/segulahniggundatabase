@@ -8,16 +8,9 @@
   </head>
   <body>
     <div class="site-shell">
-      <header class="site-header">
-        <div class="wrap">
-          <div class="brand-row">
-            <a href="/" class="brand-link" aria-label="Segulah Niggun Database home">
-              <img src="/assets/segulah-wide.jpg" alt="Segulah" class="brand-logo" />
-            </a>
-            <a href="/admin/login" class="button-secondary">Admin</a>
-          </div>
-        </div>
-      </header>
+      <%- include("../partials/site-header", {
+        headerAction: { type: "link", href: "/admin/login", label: "Admin" }
+      }) %>
 
       <main class="wrap shell-main top-space">
         <section class="panel">
