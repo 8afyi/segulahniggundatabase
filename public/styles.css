@@ -208,6 +208,20 @@ img {
   width: 100%;
 }
 
+.lyrics-block {
+  margin: 0.85rem 0;
+}
+
+.lyrics-content {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  margin: 0;
+  padding: 0.8rem 0.9rem;
+  white-space: pre-wrap;
+  direction: rtl;
+  text-align: right;
+}
+
 .filter-grid {
   align-items: start;
   display: grid;

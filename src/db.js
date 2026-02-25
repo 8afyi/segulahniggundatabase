@@ -30,6 +30,7 @@ function initializeSchema() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       title TEXT NOT NULL,
       notes TEXT,
+      lyrics TEXT,
       tempo TEXT,
       musical_key TEXT,
       audio_path TEXT NOT NULL,
@@ -109,6 +110,16 @@ function initializeSchema() {
     CREATE INDEX IF NOT EXISTS idx_niggun_prayers_prayer_time ON niggun_prayer_times(prayer_time_id);
     CREATE INDEX IF NOT EXISTS idx_login_security_locked_until ON login_security(locked_until);
   `);
+
+  const niggunColumns = new Set(
+    db
+      .prepare("PRAGMA table_info(niggunim)")
+      .all()
+      .map((column) => column.name)
+  );
+  if (!niggunColumns.has("lyrics")) {
+    db.exec("ALTER TABLE niggunim ADD COLUMN lyrics TEXT");
+  }
 
   try {
     db.exec(`
@@ -309,6 +320,7 @@ function toNiggunRecord(row) {
     id: row.id,
     title: row.title,
     notes: row.notes || "",
+    lyrics: row.lyrics || "",
     tempo: row.tempo || "",
     musicalKey: row.musicalKey || "",
     audioPath: row.audioPath,
@@ -539,6 +551,7 @@ const createNiggunTxn = db.transaction((payload) => {
       `INSERT INTO niggunim (
         title,
         notes,
+        lyrics,
         tempo,
         musical_key,
         audio_path,
@@ -546,11 +559,12 @@ const createNiggunTxn = db.transaction((payload) => {
         original_filename,
         mime_type
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       payload.title,
       payload.notes || null,
+      payload.lyrics || null,
       payload.tempo || null,
       payload.musicalKey || null,
       payload.audioPath,
@@ -587,6 +601,7 @@ const updateNiggunTxn = db.transaction((payload) => {
     `UPDATE niggunim
      SET title = ?,
          notes = ?,
+         lyrics = ?,
          tempo = ?,
          musical_key = ?,
          audio_path = ?,
@@ -597,6 +612,7 @@ const updateNiggunTxn = db.transaction((payload) => {
   ).run(
     payload.title,
     payload.notes || null,
+    payload.lyrics || null,
     payload.tempo || null,
     payload.musicalKey || null,
     payload.audioPath,
@@ -784,6 +800,7 @@ function listNiggunim(filters = {}, options = {}) {
       n.id,
       n.title,
       n.notes,
+      n.lyrics,
       n.tempo,
       n.musical_key AS musicalKey,
       n.audio_path AS audioPath,
@@ -826,6 +843,7 @@ function getNiggunById(niggunId) {
         n.id,
         n.title,
         n.notes,
+        n.lyrics,
         n.tempo,
         n.musical_key AS musicalKey,
         n.audio_path AS audioPath,

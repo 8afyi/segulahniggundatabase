@@ -106,6 +106,17 @@
               </label>
 
               <label>
+                Lyrics (optional)
+                <textarea
+                  name="lyrics"
+                  rows="8"
+                  dir="rtl"
+                  lang="he"
+                  placeholder="Optional lyrics (Hebrew supported)"
+                ></textarea>
+              </label>
+
+              <label>
                 Audio file upload (max 20MB)
                 <input type="file" name="audioFile" accept="audio/*" />
               </label>
@@ -129,7 +140,7 @@
             <form method="get" action="/admin/niggunim" class="filter-grid">
               <label>
                 Search title, notes, singer, or author
-                <input type="text" name="q" value="<%= filters.searchQuery %>" placeholder="e.g. Ahavat Olam" />
+                <input type="text" name="q" value="<%= filters.searchQuery %>" placeholder=" " />
               </label>
 
               <label>

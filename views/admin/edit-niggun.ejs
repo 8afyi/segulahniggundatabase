@@ -116,6 +116,17 @@
               <textarea name="notes" rows="4" placeholder="Optional notes or description"><%= niggun.notes %></textarea>
             </label>
 
+            <label>
+              Lyrics (optional)
+              <textarea
+                name="lyrics"
+                rows="8"
+                dir="rtl"
+                lang="he"
+                placeholder="Optional lyrics (Hebrew supported)"
+              ><%= niggun.lyrics %></textarea>
+            </label>
+
             <div class="panel">
               <h3>Current Audio</h3>
               <audio controls preload="metadata" src="/media/<%= niggun.audioPath %>"></audio>

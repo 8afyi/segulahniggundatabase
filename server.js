@@ -1131,6 +1131,7 @@ app.post("/admin/niggunim", requireAuth, uploadForCreate, requireCsrfToken, asyn
   const returnTo = normalizeAdminReturnTo(req.body.returnTo, "/admin/niggunim/new");
   const title = sanitizeText(req.body.title || "");
   const notes = sanitizeText(req.body.notes || "");
+  const lyrics = sanitizeText(req.body.lyrics || "");
   const tempo = sanitizeText(req.body.tempo || "");
   const musicalKey = sanitizeText(req.body.musicalKey || "");
   const singers = parseCsvInput(req.body.singers || "");
@@ -1226,6 +1227,7 @@ app.post("/admin/niggunim", requireAuth, uploadForCreate, requireCsrfToken, asyn
     createNiggun({
       title,
       notes,
+      lyrics,
       tempo,
       musicalKey,
       singers,
@@ -1284,6 +1286,7 @@ app.post("/admin/niggunim/:id", requireAuth, uploadForEdit, requireCsrfToken, as
   const returnTo = normalizeAdminReturnTo(req.body.returnTo, "/admin/niggunim");
   const title = sanitizeText(req.body.title || "");
   const notes = sanitizeText(req.body.notes || "");
+  const lyrics = sanitizeText(req.body.lyrics || "");
   const tempo = sanitizeText(req.body.tempo || "");
   const musicalKey = sanitizeText(req.body.musicalKey || "");
   const singers = parseCsvInput(req.body.singers || "");
@@ -1396,6 +1399,7 @@ app.post("/admin/niggunim/:id", requireAuth, uploadForEdit, requireCsrfToken, as
       id: niggunId,
       title,
       notes,
+      lyrics,
       tempo,
       musicalKey,
       singers,
