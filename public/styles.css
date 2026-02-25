@@ -215,6 +215,7 @@ img {
 .lyrics-content {
   background: var(--panel-soft);
   border: 1px solid var(--line);
+  font-family: inherit;
   margin: 0;
   padding: 0.8rem 0.9rem;
   white-space: pre-wrap;
