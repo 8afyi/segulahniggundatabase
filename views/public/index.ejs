@@ -58,23 +58,37 @@
 
             <label>
               Singer
-              <select name="singer">
-                <option value="">All</option>
-                <% for (const singer of singers) { %>
-                  <option value="<%= singer %>" <%= filters.singer === singer ? 'selected' : '' %>><%= singer %></option>
-                <% } %>
-              </select>
+              <input
+                type="text"
+                name="singer"
+                value="<%= filters.singer %>"
+                list="public-singer-options"
+                placeholder="All singers"
+              />
             </label>
 
             <label>
               Author
-              <select name="author">
-                <option value="">All</option>
-                <% for (const author of authors) { %>
-                  <option value="<%= author %>" <%= filters.author === author ? 'selected' : '' %>><%= author %></option>
-                <% } %>
-              </select>
+              <input
+                type="text"
+                name="author"
+                value="<%= filters.author %>"
+                list="public-author-options"
+                placeholder="All authors"
+              />
             </label>
+
+            <datalist id="public-singer-options">
+              <% for (const singer of singers) { %>
+                <option value="<%= singer %>"></option>
+              <% } %>
+            </datalist>
+
+            <datalist id="public-author-options">
+              <% for (const author of authors) { %>
+                <option value="<%= author %>"></option>
+              <% } %>
+            </datalist>
 
             <label>
               Sort
@@ -136,25 +150,38 @@
             <p class="muted">Showing <%= pageStart %>-<%= pageEnd %> of <%= pagination.totalCount %> (page <%= pagination.page %> of <%= pagination.totalPages %>)</p>
           <% } %>
 
+          <% if (activeFilterChips && activeFilterChips.length > 0) { %>
+            <div class="active-filter-bar" aria-label="Active filters">
+              <span class="active-filter-label">Active filters:</span>
+              <% for (const chip of activeFilterChips) { %>
+                <a href="<%= chip.url %>" class="tag-chip tag-chip-link filter-chip-remove" aria-label="Remove filter <%= chip.label %>">
+                  <%= chip.label %> &times;
+                </a>
+              <% } %>
+              <a href="/" class="button-secondary active-filter-clear">Clear all</a>
+            </div>
+          <% } %>
+
           <% if (niggunim.length === 0) { %>
             <div class="panel">
               <p>No niggunim matched your search.</p>
             </div>
           <% } else { %>
             <div class="table-wrap">
-              <table>
+              <table class="results-table">
+                <caption class="sr-only">Niggun results listing</caption>
                 <thead>
                   <tr>
-                    <th>Title</th>
-                    <th>Authors</th>
-                    <th>Tempo</th>
-                    <th>Preview</th>
+                    <th scope="col">Title</th>
+                    <th scope="col">Authors</th>
+                    <th scope="col">Tempo</th>
+                    <th scope="col">Preview</th>
                   </tr>
                 </thead>
                 <tbody>
                   <% for (const niggun of niggunim) { %>
                     <tr>
-                      <td>
+                      <td data-label="Title" class="results-title-cell">
                         <a href="<%= buildNiggunPublicPath(niggun) %>"><%= niggun.title %></a>
                         <% const tagItems = []; %>
                         <% for (const occasionTag of niggun.occasions) { %>
@@ -178,15 +205,17 @@
                           <% } %>
                         </div>
                       </td>
-                      <td><%= niggun.authors.join(', ') %></td>
-                      <td><%= niggun.tempo || 'N/A' %></td>
-                      <td class="audio-preview-cell">
+                      <td data-label="Authors"><%= niggun.authors.join(', ') %></td>
+                      <td data-label="Tempo"><%= niggun.tempo || 'N/A' %></td>
+                      <td data-label="Preview" class="audio-preview-cell">
                         <button
                           type="button"
                           class="button-secondary audio-preview-button"
                           data-audio-button
                           data-play-label="Play"
                           data-pause-label="Pause"
+                          data-play-aria-label="Play preview for <%= niggun.title %>"
+                          data-pause-aria-label="Pause preview for <%= niggun.title %>"
                           aria-pressed="false"
                           aria-label="Play preview for <%= niggun.title %>"
                         >

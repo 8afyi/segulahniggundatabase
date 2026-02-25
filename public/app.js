@@ -21,8 +21,11 @@
   function updateButtonState(button, isPlaying) {
     const playLabel = button.getAttribute("data-play-label") || "Play";
     const pauseLabel = button.getAttribute("data-pause-label") || "Pause";
+    const playAriaLabel = button.getAttribute("data-play-aria-label") || playLabel;
+    const pauseAriaLabel = button.getAttribute("data-pause-aria-label") || pauseLabel;
     button.textContent = isPlaying ? pauseLabel : playLabel;
     button.setAttribute("aria-pressed", isPlaying ? "true" : "false");
+    button.setAttribute("aria-label", isPlaying ? pauseAriaLabel : playAriaLabel);
   }
 
   function stopActivePreview() {

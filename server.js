@@ -318,6 +318,10 @@ const ADMIN_NAV_ITEMS = [
   { key: "users", label: "User Management", href: "/admin/users" }
 ];
 const SORT_VALUES = new Set(SORT_OPTIONS.map((option) => option.value));
+const SORT_LABELS = SORT_OPTIONS.reduce((accumulator, option) => {
+  accumulator[option.value] = option.label;
+  return accumulator;
+}, {});
 const DEFAULT_SORT_KEY = "newest";
 const PUBLIC_PAGE_SIZE = Math.min(100, toPositiveInt(process.env.PUBLIC_PAGE_SIZE, 12));
 const ADMIN_PAGE_SIZE = Math.min(200, toPositiveInt(process.env.ADMIN_PAGE_SIZE, 25));
@@ -584,21 +588,107 @@ function normalizeFilters(query, availableKeyOptions = MUSICAL_KEY_OPTIONS) {
   };
 }
 
-function formatNiggunUploadedDate(createdAt) {
-  const rawCreatedAt = sanitizeText(createdAt || "");
-  if (!rawCreatedAt) {
+function toEasternDateLabel(rawTimestamp) {
+  const cleanedTimestamp = sanitizeText(rawTimestamp || "");
+  if (!cleanedTimestamp) {
     return "";
   }
 
-  const isoBase = rawCreatedAt.includes("T") ? rawCreatedAt : rawCreatedAt.replace(" ", "T");
+  const isoBase = cleanedTimestamp.includes("T") ? cleanedTimestamp : cleanedTimestamp.replace(" ", "T");
   const hasTimezone = /(?:[zZ]|[+-]\d{2}:\d{2})$/.test(isoBase);
   const isoWithTimezone = hasTimezone ? isoBase : `${isoBase}Z`;
   const parsedDate = new Date(isoWithTimezone);
   if (Number.isNaN(parsedDate.getTime())) {
-    return rawCreatedAt;
+    return cleanedTimestamp;
   }
 
   return EASTERN_DATE_FORMATTER.format(parsedDate);
+}
+
+function toFilterQueryState(filters, sortKey) {
+  return {
+    q: filters.searchQuery,
+    tempo: filters.tempo,
+    key: filters.musicalKey,
+    singer: filters.singer,
+    author: filters.author,
+    occasions: filters.occasions,
+    prayerTimes: filters.prayerTimes,
+    sort: sortKey
+  };
+}
+
+function cloneFilterQueryState(queryState) {
+  return {
+    ...queryState,
+    occasions: [...queryState.occasions],
+    prayerTimes: [...queryState.prayerTimes]
+  };
+}
+
+function buildActiveFilterChips(filters, sortKey, buildUrlForQueryState) {
+  const queryState = toFilterQueryState(filters, sortKey);
+  const chips = [];
+
+  function addChip(label, updateQueryState) {
+    const nextQueryState = cloneFilterQueryState(queryState);
+    updateQueryState(nextQueryState);
+    chips.push({
+      label,
+      url: buildUrlForQueryState(nextQueryState)
+    });
+  }
+
+  if (queryState.q) {
+    addChip(`Search: ${queryState.q}`, (nextQueryState) => {
+      nextQueryState.q = "";
+    });
+  }
+
+  if (queryState.tempo) {
+    addChip(`Tempo: ${queryState.tempo}`, (nextQueryState) => {
+      nextQueryState.tempo = "";
+    });
+  }
+
+  if (queryState.key) {
+    addChip(`Key: ${queryState.key}`, (nextQueryState) => {
+      nextQueryState.key = "";
+    });
+  }
+
+  if (queryState.singer) {
+    addChip(`Singer: ${queryState.singer}`, (nextQueryState) => {
+      nextQueryState.singer = "";
+    });
+  }
+
+  if (queryState.author) {
+    addChip(`Author: ${queryState.author}`, (nextQueryState) => {
+      nextQueryState.author = "";
+    });
+  }
+
+  for (const occasion of queryState.occasions) {
+    addChip(`Service Tag: ${occasion}`, (nextQueryState) => {
+      nextQueryState.occasions = nextQueryState.occasions.filter((value) => value !== occasion);
+    });
+  }
+
+  for (const prayerTime of queryState.prayerTimes) {
+    addChip(`Prayer Tag: ${prayerTime}`, (nextQueryState) => {
+      nextQueryState.prayerTimes = nextQueryState.prayerTimes.filter((value) => value !== prayerTime);
+    });
+  }
+
+  if (sortKey !== DEFAULT_SORT_KEY) {
+    const sortLabel = SORT_LABELS[sortKey] || sortKey;
+    addChip(`Sort: ${sortLabel}`, (nextQueryState) => {
+      nextQueryState.sort = "";
+    });
+  }
+
+  return chips;
 }
 
 function toNiggunTitleSlug(title) {
@@ -606,7 +696,7 @@ function toNiggunTitleSlug(title) {
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .replace(/['’]/g, "")
+    .replace(/['\u2019]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 
@@ -643,22 +733,17 @@ app.get("/", (req, res) => {
 
   const singers = listSingers();
   const authors = listAuthors();
-  const queryState = {
-    q: filters.searchQuery,
-    tempo: filters.tempo,
-    key: filters.musicalKey,
-    singer: filters.singer,
-    author: filters.author,
-    occasions: filters.occasions,
-    prayerTimes: filters.prayerTimes,
-    sort: sortKey
-  };
-  const buildPublicQuery = (pageNumber = pagination.page) =>
+  const queryState = toFilterQueryState(filters, sortKey);
+  const buildPublicQuery = (pageNumber = pagination.page, nextQueryState = queryState) =>
     buildQueryString({
-      ...queryState,
+      ...nextQueryState,
       page: pageNumber > 1 ? String(pageNumber) : ""
     });
-  const buildPublicUrl = (pageNumber = pagination.page) => toPathWithQuery("/", buildPublicQuery(pageNumber));
+  const buildPublicUrl = (pageNumber = pagination.page, nextQueryState = queryState) =>
+    toPathWithQuery("/", buildPublicQuery(pageNumber, nextQueryState));
+  const activeFilterChips = buildActiveFilterChips(filters, sortKey, (nextQueryState) =>
+    buildPublicUrl(1, nextQueryState)
+  );
 
   res.render("public/index", {
     niggunim,
@@ -666,6 +751,7 @@ app.get("/", (req, res) => {
     sortKey,
     sortOptions: SORT_OPTIONS,
     pagination,
+    activeFilterChips,
     buildPublicQuery,
     buildPublicUrl,
     buildNiggunPublicPath,
@@ -696,7 +782,7 @@ app.get(/^\/niggunim\/(\d+)(?:-([^/]+))?$/, (req, res) => {
     return res.redirect(toPathWithQuery(buildNiggunPublicPath(niggun), queryString));
   }
 
-  const uploadedDateLabel = formatNiggunUploadedDate(niggun.createdAt);
+  const uploadedDateLabel = toEasternDateLabel(niggun.createdAt);
 
   return res.render("public/niggun", {
     niggun,
@@ -866,24 +952,22 @@ app.get("/admin/niggunim", requireAuth, (req, res) => {
     sortKey,
     limit: ADMIN_PAGE_SIZE,
     offset: pagination.offset
-  });
-  const queryState = {
-    q: filters.searchQuery,
-    tempo: filters.tempo,
-    key: filters.musicalKey,
-    singer: filters.singer,
-    author: filters.author,
-    occasions: filters.occasions,
-    prayerTimes: filters.prayerTimes,
-    sort: sortKey
-  };
-  const buildAdminQuery = (pageNumber = pagination.page) =>
+  }).map((niggun) => ({
+    ...niggun,
+    createdAtLabel: toEasternDateLabel(niggun.createdAt)
+  }));
+  const queryState = toFilterQueryState(filters, sortKey);
+  const buildAdminQuery = (pageNumber = pagination.page, nextQueryState = queryState) =>
     buildQueryString({
-      ...queryState,
+      ...nextQueryState,
       page: pageNumber > 1 ? String(pageNumber) : ""
     });
-  const buildAdminUrl = (pageNumber = pagination.page) => toPathWithQuery("/admin/niggunim", buildAdminQuery(pageNumber));
-  const adminReturnTo = toPathWithQuery("/admin/niggunim", buildAdminQuery(pagination.page));
+  const buildAdminUrl = (pageNumber = pagination.page, nextQueryState = queryState) =>
+    toPathWithQuery("/admin/niggunim", buildAdminQuery(pageNumber, nextQueryState));
+  const adminReturnTo = buildAdminUrl(pagination.page, queryState);
+  const activeFilterChips = buildActiveFilterChips(filters, sortKey, (nextQueryState) =>
+    buildAdminUrl(1, nextQueryState)
+  );
 
   return res.render("admin/dashboard", {
     adminSection: "existing",
@@ -895,6 +979,7 @@ app.get("/admin/niggunim", requireAuth, (req, res) => {
     sortKey,
     sortOptions: SORT_OPTIONS,
     pagination,
+    activeFilterChips,
     buildAdminQuery,
     buildAdminUrl,
     buildNiggunPublicPath,
@@ -907,7 +992,10 @@ app.get("/admin/niggunim", requireAuth, (req, res) => {
 });
 
 app.get("/admin/users", requireAuth, (req, res) => {
-  const users = listUsers();
+  const users = listUsers().map((user) => ({
+    ...user,
+    createdAtLabel: toEasternDateLabel(user.createdAt)
+  }));
 
   return res.render("admin/dashboard", {
     adminSection: "users",

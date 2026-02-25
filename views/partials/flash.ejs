@@ -1,3 +1,11 @@
 <% if (flash) { %>
-  <div class="flash flash-<%= flash.type %>"><%= flash.message %></div>
+  <% const isErrorFlash = flash.type === 'error'; %>
+  <div
+    class="flash flash-<%= flash.type %>"
+    role="<%= isErrorFlash ? 'alert' : 'status' %>"
+    aria-live="<%= isErrorFlash ? 'assertive' : 'polite' %>"
+    aria-atomic="true"
+  >
+    <%= flash.message %>
+  </div>
 <% } %>

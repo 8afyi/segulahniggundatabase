@@ -154,23 +154,37 @@
 
               <label>
                 Singer
-                <select name="singer">
-                  <option value="">All</option>
-                  <% for (const singer of singers) { %>
-                    <option value="<%= singer %>" <%= filters.singer === singer ? 'selected' : '' %>><%= singer %></option>
-                  <% } %>
-                </select>
+                <input
+                  type="text"
+                  name="singer"
+                  value="<%= filters.singer %>"
+                  list="admin-singer-options"
+                  placeholder="All singers"
+                />
               </label>
 
               <label>
                 Author
-                <select name="author">
-                  <option value="">All</option>
-                  <% for (const author of authors) { %>
-                    <option value="<%= author %>" <%= filters.author === author ? 'selected' : '' %>><%= author %></option>
-                  <% } %>
-                </select>
+                <input
+                  type="text"
+                  name="author"
+                  value="<%= filters.author %>"
+                  list="admin-author-options"
+                  placeholder="All authors"
+                />
               </label>
+
+              <datalist id="admin-singer-options">
+                <% for (const singer of singers) { %>
+                  <option value="<%= singer %>"></option>
+                <% } %>
+              </datalist>
+
+              <datalist id="admin-author-options">
+                <% for (const author of authors) { %>
+                  <option value="<%= author %>"></option>
+                <% } %>
+              </datalist>
 
               <label>
                 Sort
@@ -227,22 +241,35 @@
               <p class="muted">Showing <%= pageStart %>-<%= pageEnd %> of <%= pagination.totalCount %> (page <%= pagination.page %> of <%= pagination.totalPages %>)</p>
             <% } %>
 
+            <% if (activeFilterChips && activeFilterChips.length > 0) { %>
+              <div class="active-filter-bar" aria-label="Active filters">
+                <span class="active-filter-label">Active filters:</span>
+                <% for (const chip of activeFilterChips) { %>
+                  <a href="<%= chip.url %>" class="tag-chip tag-chip-link filter-chip-remove" aria-label="Remove filter <%= chip.label %>">
+                    <%= chip.label %> &times;
+                  </a>
+                <% } %>
+                <a href="/admin/niggunim" class="button-secondary active-filter-clear">Clear all</a>
+              </div>
+            <% } %>
+
             <% if (niggunim.length === 0) { %>
               <p>No niggunim uploaded yet.</p>
             <% } else { %>
               <div class="table-wrap">
                 <table>
+                  <caption class="sr-only">Admin niggun listing</caption>
                   <thead>
                     <tr>
-                      <th>Title</th>
-                      <th>Singers</th>
-                      <th>Authors</th>
-                      <th>Service Tags</th>
-                      <th>Prayer Tags</th>
-                      <th>Tempo</th>
-                      <th>Key</th>
-                      <th>Uploaded</th>
-                      <th>Action</th>
+                      <th scope="col">Title</th>
+                      <th scope="col">Singers</th>
+                      <th scope="col">Authors</th>
+                      <th scope="col">Service Tags</th>
+                      <th scope="col">Prayer Tags</th>
+                      <th scope="col">Tempo</th>
+                      <th scope="col">Key</th>
+                      <th scope="col">Uploaded</th>
+                      <th scope="col">Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -275,7 +302,7 @@
                         </td>
                         <td><%= niggun.tempo || 'N/A' %></td>
                         <td><%= niggun.musicalKey || 'N/A' %></td>
-                        <td><%= niggun.createdAt %></td>
+                        <td><%= niggun.createdAtLabel || 'N/A' %></td>
                         <td>
                           <a
                             href="/admin/niggunim/<%= niggun.id %>/edit?returnTo=<%= encodeURIComponent(adminReturnTo) %>"
@@ -334,19 +361,20 @@
 
             <div class="table-wrap">
               <table>
+                <caption class="sr-only">Admin user listing</caption>
                 <thead>
                   <tr>
-                    <th>Username</th>
-                    <th>Created</th>
-                    <th>Reset Password</th>
-                    <th>Delete</th>
+                    <th scope="col">Username</th>
+                    <th scope="col">Created</th>
+                    <th scope="col">Reset Password</th>
+                    <th scope="col">Delete</th>
                   </tr>
                 </thead>
                 <tbody>
                   <% for (const user of users) { %>
                     <tr>
                       <td><%= user.username %></td>
-                      <td><%= user.createdAt %></td>
+                      <td><%= user.createdAtLabel || 'N/A' %></td>
                       <td>
                         <form method="post" action="/admin/users/<%= user.id %>/password" class="user-password-form" data-confirm="Reset password for this user?">
                           <%- include('../partials/csrf-field', { csrfToken: csrfToken }) %>
