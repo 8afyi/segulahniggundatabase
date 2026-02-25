@@ -128,6 +128,7 @@ sudo systemctl list-timers | grep segulah-niggun-database-backup
 
 ## Production notes (Ubuntu)
 - Set a strong `SESSION_SECRET`
+- In production, startup fails if `SESSION_SECRET` is missing, too short, or left at the development fallback value
 - Keep Redis local-only (`127.0.0.1`) unless you intentionally externalize it
 - Run behind Nginx/Caddy with TLS
 - For Cloudflare, use Full (strict) TLS mode and keep `TRUST_PROXY=1`
