@@ -1,4 +1,4 @@
-# Another TODO file!
+# Things to do!
 
 * Change "Authors" to "Composers"
 * Make "basic search" and "advanced search"

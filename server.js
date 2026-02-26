@@ -594,6 +594,23 @@ function normalizeFilters(
   };
 }
 
+function normalizeBasicFilters(query, availableModeOptions = MODE_OPTIONS) {
+  const searchQuery = sanitizeText(query.q || "");
+  const tempo = sanitizeText(query.tempo || "");
+  const mode = sanitizeText(query.mode || query.key || "");
+
+  return {
+    searchQuery,
+    tempo: TEMPO_OPTIONS.includes(tempo) ? tempo : "",
+    mode: availableModeOptions.includes(mode) ? mode : "",
+    meter: "",
+    singer: "",
+    author: "",
+    occasions: [],
+    prayerTimes: []
+  };
+}
+
 function toEasternDateLabel(rawTimestamp) {
   const cleanedTimestamp = sanitizeText(rawTimestamp || "");
   if (!cleanedTimestamp) {
@@ -677,7 +694,7 @@ function buildActiveFilterChips(filters, sortKey, buildUrlForQueryState) {
   }
 
   if (queryState.author) {
-    addChip(`Author: ${queryState.author}`, (nextQueryState) => {
+    addChip(`Composer: ${queryState.author}`, (nextQueryState) => {
       nextQueryState.author = "";
     });
   }
@@ -694,7 +711,7 @@ function buildActiveFilterChips(filters, sortKey, buildUrlForQueryState) {
     });
   }
 
-  if (sortKey !== DEFAULT_SORT_KEY) {
+  if (sortKey && sortKey !== DEFAULT_SORT_KEY) {
     const sortLabel = SORT_LABELS[sortKey] || sortKey;
     addChip(`Sort: ${sortLabel}`, (nextQueryState) => {
       nextQueryState.sort = "";
@@ -720,11 +737,14 @@ function buildNiggunPublicPath(niggun) {
   return `/niggunim/${niggun.id}-${toNiggunTitleSlug(niggun.title)}`;
 }
 
-app.get("/", (req, res) => {
+function renderPublicSearchPage(req, res, { isAdvancedSearch = false } = {}) {
   const modeOptions = MODE_OPTIONS;
   const meterOptions = METER_OPTIONS;
-  const filters = normalizeFilters(req.query, modeOptions, meterOptions);
-  const sortKey = normalizeSortKey(req.query.sort);
+  const filters = isAdvancedSearch
+    ? normalizeFilters(req.query, modeOptions, meterOptions)
+    : normalizeBasicFilters(req.query, modeOptions);
+  const sortKey = isAdvancedSearch ? normalizeSortKey(req.query.sort) : DEFAULT_SORT_KEY;
+  const querySortKey = isAdvancedSearch ? sortKey : "";
   const requestedPage = normalizePage(req.query.page);
 
   const listFilters = {
@@ -739,6 +759,7 @@ app.get("/", (req, res) => {
   };
   const totalCount = countNiggunim(listFilters);
   const pagination = buildPagination(totalCount, requestedPage, PUBLIC_PAGE_SIZE);
+  const searchPath = isAdvancedSearch ? "/advanced-search" : "/";
 
   const niggunim = listNiggunim(listFilters, {
     sortKey,
@@ -746,29 +767,49 @@ app.get("/", (req, res) => {
     offset: pagination.offset
   });
 
-  const singers = listSingers();
-  const authors = listAuthors();
-  const queryState = toFilterQueryState(filters, sortKey);
-  const buildPublicQuery = (pageNumber = pagination.page, nextQueryState = queryState) =>
+  const singers = isAdvancedSearch ? listSingers() : [];
+  const authors = isAdvancedSearch ? listAuthors() : [];
+  const queryState = toFilterQueryState(filters, querySortKey);
+  const buildSearchQuery = (pageNumber = pagination.page, nextQueryState = queryState) =>
     buildQueryString({
       ...nextQueryState,
       page: pageNumber > 1 ? String(pageNumber) : ""
     });
-  const buildPublicUrl = (pageNumber = pagination.page, nextQueryState = queryState) =>
-    toPathWithQuery("/", buildPublicQuery(pageNumber, nextQueryState));
-  const activeFilterChips = buildActiveFilterChips(filters, sortKey, (nextQueryState) =>
-    buildPublicUrl(1, nextQueryState)
+  const buildSearchUrl = (pageNumber = pagination.page, nextQueryState = queryState) =>
+    toPathWithQuery(searchPath, buildSearchQuery(pageNumber, nextQueryState));
+  const activeFilterChips = buildActiveFilterChips(filters, querySortKey, (nextQueryState) =>
+    buildSearchUrl(1, nextQueryState)
+  );
+  const basicSearchUrl = toPathWithQuery(
+    "/",
+    buildQueryString({
+      q: filters.searchQuery,
+      tempo: filters.tempo,
+      mode: filters.mode
+    })
+  );
+  const advancedSearchUrl = toPathWithQuery(
+    "/advanced-search",
+    buildQueryString({
+      q: filters.searchQuery,
+      tempo: filters.tempo,
+      mode: filters.mode
+    })
   );
 
   res.render("public/index", {
     niggunim,
+    isAdvancedSearch,
+    searchPath,
+    basicSearchUrl,
+    advancedSearchUrl,
     filters,
-    sortKey,
+    sortKey: querySortKey,
     sortOptions: SORT_OPTIONS,
     pagination,
     activeFilterChips,
-    buildPublicQuery,
-    buildPublicUrl,
+    buildSearchQuery,
+    buildSearchUrl,
     buildNiggunPublicPath,
     tempoOptions: TEMPO_OPTIONS,
     modeOptions,
@@ -778,6 +819,18 @@ app.get("/", (req, res) => {
     singers,
     authors
   });
+}
+
+app.get("/", (req, res) => {
+  return renderPublicSearchPage(req, res, { isAdvancedSearch: false });
+});
+
+app.get("/advanced-search", (req, res) => {
+  return renderPublicSearchPage(req, res, { isAdvancedSearch: true });
+});
+
+app.get("/faq", (req, res) => {
+  return res.render("public/faq");
 });
 
 app.get(/^\/niggunim\/(\d+)(?:-([^/]+))?$/, (req, res) => {
@@ -1185,7 +1238,7 @@ app.post("/admin/niggunim", requireAuth, uploadForCreate, requireCsrfToken, asyn
     if (uploadedFile) {
       removeAudioFile(uploadedFile.filename);
     }
-    setFlash(req, "error", "At least one author is required.");
+    setFlash(req, "error", "At least one composer is required.");
     return res.redirect(returnTo);
   }
 
@@ -1368,7 +1421,7 @@ app.post("/admin/niggunim/:id", requireAuth, uploadForEdit, requireCsrfToken, as
     if (uploadedFile) {
       removeAudioFile(uploadedFile.filename);
     }
-    setFlash(req, "error", "At least one author is required.");
+    setFlash(req, "error", "At least one composer is required.");
     return res.redirect(returnTo);
   }
 

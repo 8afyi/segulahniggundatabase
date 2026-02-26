@@ -15,13 +15,14 @@ Why this stack for MVP:
 
 ## Features
 - Public catalog open to everyone (no login)
-- Search by title/notes and filter by tempo/mode/meter/singer/author
+- Basic search on `/` (title/notes/singer/composer text query + tempo + mode)
+- Advanced search on `/advanced-search` (full filter set: meter/singer/composer/tags/sort)
 - SQLite FTS5-backed text search (with automatic fallback to LIKE if FTS5 is unavailable)
 - Additional tag filters:
   - Service tags: Weekday, Shabbat, Festivals, Rosh Chodesh, High Holidays
   - Prayer tags: Shacharit, Musaf, Minchah, Maariv
 - Public/admin list sorting and pagination
-- Admin catalog search/filter parity with public filters (query state preserved across pagination/actions)
+- Admin catalog and public advanced-search filter parity (query state preserved across pagination/actions)
 - Niggun detail card with built-in audio player
 - Admin auth with first-run setup flow
 - Admin user management (add/remove users, reset passwords)
@@ -38,7 +39,7 @@ Why this stack for MVP:
 - `users`
 - `niggunim`
 - `singers` + `niggun_singers` (many-to-many)
-- `authors` + `niggun_authors` (many-to-many)
+- `authors` + `niggun_authors` (many-to-many, used for composer names)
 - `occasions` + `niggun_occasions` (many-to-many)
 - `prayer_times` + `niggun_prayer_times` (many-to-many)
 

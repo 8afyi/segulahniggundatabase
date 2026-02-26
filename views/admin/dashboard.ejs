@@ -45,8 +45,8 @@
               </label>
 
               <label>
-                Author(s) (required, comma-separated)
-                <input type="text" name="authors" required placeholder="Author One, Author Two" />
+                Composer(s) (required, comma-separated)
+                <input type="text" name="authors" required placeholder="Composer One, Composer Two" />
               </label>
 
               <fieldset class="checkbox-fieldset">
@@ -142,7 +142,7 @@
 
             <form method="get" action="/admin/niggunim" class="filter-grid">
               <label>
-                Search title, notes, singer, or author
+                Search title, notes, singer, or composer
                 <input type="text" name="q" value="<%= filters.searchQuery %>" placeholder=" " />
               </label>
 
@@ -188,13 +188,13 @@
               </label>
 
               <label>
-                Author
+                Composer
                 <input
                   type="text"
                   name="author"
                   value="<%= filters.author %>"
                   list="admin-author-options"
-                  placeholder="All authors"
+                  placeholder="All composers"
                 />
               </label>
 
@@ -287,7 +287,7 @@
                     <tr>
                       <th scope="col">Title</th>
                       <th scope="col">Singers</th>
-                      <th scope="col">Authors</th>
+                      <th scope="col">Composers</th>
                       <th scope="col">Service Tags</th>
                       <th scope="col">Prayer Tags</th>
                       <th scope="col">Tempo</th>
