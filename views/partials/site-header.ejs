@@ -14,14 +14,17 @@
         <img src="/assets/segulah-wide.jpg" alt="Segulah" class="brand-logo" />
       </a>
 
-      <% if (action && action.type === "signout") { %>
-        <form method="post" action="<%= action.action || '/admin/logout' %>">
-          <%- include("./csrf-field", { csrfToken: action.csrfToken || pageCsrfToken }) %>
-          <button type="submit" class="<%= action.className || 'button-secondary' %>"><%= action.label || "Sign out" %></button>
-        </form>
-      <% } else if (action && action.type === "link") { %>
-        <a href="<%= action.href %>" class="<%= action.className || 'button-secondary' %>"><%= action.label %></a>
-      <% } %>
+      <div class="header-actions">
+        <a href="/faq" class="button-secondary">FAQ</a>
+        <% if (action && action.type === "signout") { %>
+          <form method="post" action="<%= action.action || '/admin/logout' %>">
+            <%- include("./csrf-field", { csrfToken: action.csrfToken || pageCsrfToken }) %>
+            <button type="submit" class="<%= action.className || 'button-secondary' %>"><%= action.label || "Sign out" %></button>
+          </form>
+        <% } else if (action && action.type === "link") { %>
+          <a href="<%= action.href %>" class="<%= action.className || 'button-secondary' %>"><%= action.label %></a>
+        <% } %>
+      </div>
     </div>
 
     <% if (metaText || metaPrefix || metaStrong || metaSuffix) { %>

@@ -121,6 +121,17 @@ img {
   width: min(420px, 100%);
 }
 
+.header-actions {
+  align-items: center;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.header-actions form {
+  margin: 0;
+}
+
 .site-tagline,
 .admin-meta {
   color: var(--muted);
