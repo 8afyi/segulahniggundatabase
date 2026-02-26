@@ -5,5 +5,4 @@ uploads/audio/
 .env
 npm-debug.log*
 .DS_Store
-TODO.md
 Project_Description.md
