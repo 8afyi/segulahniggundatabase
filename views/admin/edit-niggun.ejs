@@ -97,11 +97,21 @@
             </label>
 
             <label>
-              Key
-              <select name="musicalKey">
-                <option value="">Select key</option>
-                <% for (const key of keyOptions) { %>
-                  <option value="<%= key %>" <%= niggun.musicalKey === key ? 'selected' : '' %>><%= key %></option>
+              Mode
+              <select name="mode">
+                <option value="">Select mode</option>
+                <% for (const mode of modeOptions) { %>
+                  <option value="<%= mode %>" <%= niggun.mode === mode ? 'selected' : '' %>><%= mode %></option>
+                <% } %>
+              </select>
+            </label>
+
+            <label>
+              Meter
+              <select name="meter">
+                <option value="">Select meter</option>
+                <% for (const meter of meterOptions) { %>
+                  <option value="<%= meter %>" <%= niggun.meter === meter ? 'selected' : '' %>><%= meter %></option>
                 <% } %>
               </select>
             </label>

@@ -15,7 +15,7 @@ Why this stack for MVP:
 
 ## Features
 - Public catalog open to everyone (no login)
-- Search by title/notes and filter by tempo/key/singer/author
+- Search by title/notes and filter by tempo/mode/meter/singer/author
 - SQLite FTS5-backed text search (with automatic fallback to LIKE if FTS5 is unavailable)
 - Additional tag filters:
   - Service tags: Weekday, Shabbat, Festivals, Rosh Chodesh, High Holidays

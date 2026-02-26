@@ -84,11 +84,21 @@
               </label>
 
               <label>
-                Key
-                <select name="musicalKey">
-                  <option value="">Select key</option>
-                  <% for (const key of keyOptions) { %>
-                    <option value="<%= key %>"><%= key %></option>
+                Mode
+                <select name="mode">
+                  <option value="">Select mode</option>
+                  <% for (const mode of modeOptions) { %>
+                    <option value="<%= mode %>"><%= mode %></option>
+                  <% } %>
+                </select>
+              </label>
+
+              <label>
+                Meter
+                <select name="meter">
+                  <option value="">Select meter</option>
+                  <% for (const meter of meterOptions) { %>
+                    <option value="<%= meter %>"><%= meter %></option>
                   <% } %>
                 </select>
               </label>
@@ -147,11 +157,21 @@
               </label>
 
               <label>
-                Key
-                <select name="key">
+                Mode
+                <select name="mode">
                   <option value="">All</option>
-                  <% for (const key of keyOptions) { %>
-                    <option value="<%= key %>" <%= filters.musicalKey === key ? 'selected' : '' %>><%= key %></option>
+                  <% for (const mode of modeOptions) { %>
+                    <option value="<%= mode %>" <%= filters.mode === mode ? 'selected' : '' %>><%= mode %></option>
+                  <% } %>
+                </select>
+              </label>
+
+              <label>
+                Meter
+                <select name="meter">
+                  <option value="">All</option>
+                  <% for (const meter of meterOptions) { %>
+                    <option value="<%= meter %>" <%= filters.meter === meter ? 'selected' : '' %>><%= meter %></option>
                   <% } %>
                 </select>
               </label>
@@ -271,7 +291,8 @@
                       <th scope="col">Service Tags</th>
                       <th scope="col">Prayer Tags</th>
                       <th scope="col">Tempo</th>
-                      <th scope="col">Key</th>
+                      <th scope="col">Mode</th>
+                      <th scope="col">Meter</th>
                       <th scope="col">Uploaded</th>
                       <th scope="col">Action</th>
                     </tr>
@@ -305,7 +326,8 @@
                           <% } %>
                         </td>
                         <td><%= niggun.tempo || 'N/A' %></td>
-                        <td><%= niggun.musicalKey || 'N/A' %></td>
+                        <td><%= niggun.mode || 'N/A' %></td>
+                        <td><%= niggun.meter || 'N/A' %></td>
                         <td><%= niggun.createdAtLabel || 'N/A' %></td>
                         <td>
                           <a

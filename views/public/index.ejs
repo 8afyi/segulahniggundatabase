@@ -41,11 +41,21 @@
             </label>
 
             <label>
-              Key
-              <select name="key">
+              Mode
+              <select name="mode">
                 <option value="">All</option>
-                <% for (const key of keyOptions) { %>
-                  <option value="<%= key %>" <%= filters.musicalKey === key ? 'selected' : '' %>><%= key %></option>
+                <% for (const mode of modeOptions) { %>
+                  <option value="<%= mode %>" <%= filters.mode === mode ? 'selected' : '' %>><%= mode %></option>
+                <% } %>
+              </select>
+            </label>
+
+            <label>
+              Meter
+              <select name="meter">
+                <option value="">All</option>
+                <% for (const meter of meterOptions) { %>
+                  <option value="<%= meter %>" <%= filters.meter === meter ? 'selected' : '' %>><%= meter %></option>
                 <% } %>
               </select>
             </label>

@@ -29,13 +29,13 @@ const {
   getNiggunById,
   listSingers,
   listAuthors,
-  listUsedMusicalKeys,
   deleteNiggun
 } = require("./src/db");
 const { requireAuth } = require("./src/middleware/auth");
 const {
   TEMPO_OPTIONS,
-  MUSICAL_KEY_OPTIONS,
+  MODE_OPTIONS,
+  METER_OPTIONS,
   OCCASION_TAG_OPTIONS,
   PRAYER_TIME_TAG_OPTIONS,
   MAX_AUDIO_BYTES,
@@ -568,10 +568,15 @@ function buildAdminNavigation(activeKey) {
   }));
 }
 
-function normalizeFilters(query, availableKeyOptions = MUSICAL_KEY_OPTIONS) {
+function normalizeFilters(
+  query,
+  availableModeOptions = MODE_OPTIONS,
+  availableMeterOptions = METER_OPTIONS
+) {
   const searchQuery = sanitizeText(query.q || "");
   const tempo = sanitizeText(query.tempo || "");
-  const musicalKey = sanitizeText(query.key || "");
+  const mode = sanitizeText(query.mode || query.key || "");
+  const meter = sanitizeText(query.meter || "");
   const singer = sanitizeText(query.singer || "");
   const author = sanitizeText(query.author || "");
   const occasions = parseMultiSelectInput(query.occasions, OCCASION_TAG_OPTIONS);
@@ -580,7 +585,8 @@ function normalizeFilters(query, availableKeyOptions = MUSICAL_KEY_OPTIONS) {
   return {
     searchQuery,
     tempo: TEMPO_OPTIONS.includes(tempo) ? tempo : "",
-    musicalKey: availableKeyOptions.includes(musicalKey) ? musicalKey : "",
+    mode: availableModeOptions.includes(mode) ? mode : "",
+    meter: availableMeterOptions.includes(meter) ? meter : "",
     singer,
     author,
     occasions,
@@ -609,7 +615,8 @@ function toFilterQueryState(filters, sortKey) {
   return {
     q: filters.searchQuery,
     tempo: filters.tempo,
-    key: filters.musicalKey,
+    mode: filters.mode,
+    meter: filters.meter,
     singer: filters.singer,
     author: filters.author,
     occasions: filters.occasions,
@@ -651,9 +658,15 @@ function buildActiveFilterChips(filters, sortKey, buildUrlForQueryState) {
     });
   }
 
-  if (queryState.key) {
-    addChip(`Key: ${queryState.key}`, (nextQueryState) => {
-      nextQueryState.key = "";
+  if (queryState.mode) {
+    addChip(`Mode: ${queryState.mode}`, (nextQueryState) => {
+      nextQueryState.mode = "";
+    });
+  }
+
+  if (queryState.meter) {
+    addChip(`Meter: ${queryState.meter}`, (nextQueryState) => {
+      nextQueryState.meter = "";
     });
   }
 
@@ -708,15 +721,17 @@ function buildNiggunPublicPath(niggun) {
 }
 
 app.get("/", (req, res) => {
-  const keyOptions = listUsedMusicalKeys();
-  const filters = normalizeFilters(req.query, keyOptions);
+  const modeOptions = MODE_OPTIONS;
+  const meterOptions = METER_OPTIONS;
+  const filters = normalizeFilters(req.query, modeOptions, meterOptions);
   const sortKey = normalizeSortKey(req.query.sort);
   const requestedPage = normalizePage(req.query.page);
 
   const listFilters = {
     searchQuery: filters.searchQuery,
     tempo: filters.tempo,
-    musicalKey: filters.musicalKey,
+    mode: filters.mode,
+    meter: filters.meter,
     singer: filters.singer,
     author: filters.author,
     occasions: filters.occasions,
@@ -756,7 +771,8 @@ app.get("/", (req, res) => {
     buildPublicUrl,
     buildNiggunPublicPath,
     tempoOptions: TEMPO_OPTIONS,
-    keyOptions,
+    modeOptions,
+    meterOptions,
     occasionOptions: OCCASION_TAG_OPTIONS,
     prayerTimeOptions: PRAYER_TIME_TAG_OPTIONS,
     singers,
@@ -923,21 +939,24 @@ app.get("/admin/niggunim/new", requireAuth, (req, res) => {
     adminNavigation: buildAdminNavigation("add"),
     adminReturnTo: "/admin/niggunim/new",
     tempoOptions: TEMPO_OPTIONS,
-    keyOptions: MUSICAL_KEY_OPTIONS,
+    modeOptions: MODE_OPTIONS,
+    meterOptions: METER_OPTIONS,
     occasionOptions: OCCASION_TAG_OPTIONS,
     prayerTimeOptions: PRAYER_TIME_TAG_OPTIONS
   });
 });
 
 app.get("/admin/niggunim", requireAuth, (req, res) => {
-  const keyOptions = listUsedMusicalKeys();
-  const filters = normalizeFilters(req.query, keyOptions);
+  const modeOptions = MODE_OPTIONS;
+  const meterOptions = METER_OPTIONS;
+  const filters = normalizeFilters(req.query, modeOptions, meterOptions);
   const sortKey = normalizeSortKey(req.query.sort);
   const requestedPage = normalizePage(req.query.page);
   const listFilters = {
     searchQuery: filters.searchQuery,
     tempo: filters.tempo,
-    musicalKey: filters.musicalKey,
+    mode: filters.mode,
+    meter: filters.meter,
     singer: filters.singer,
     author: filters.author,
     occasions: filters.occasions,
@@ -985,7 +1004,8 @@ app.get("/admin/niggunim", requireAuth, (req, res) => {
     buildNiggunPublicPath,
     adminReturnTo,
     tempoOptions: TEMPO_OPTIONS,
-    keyOptions,
+    modeOptions,
+    meterOptions,
     occasionOptions: OCCASION_TAG_OPTIONS,
     prayerTimeOptions: PRAYER_TIME_TAG_OPTIONS
   });
@@ -1003,7 +1023,8 @@ app.get("/admin/users", requireAuth, (req, res) => {
     users,
     adminReturnTo: "/admin/users",
     tempoOptions: TEMPO_OPTIONS,
-    keyOptions: MUSICAL_KEY_OPTIONS,
+    modeOptions: MODE_OPTIONS,
+    meterOptions: METER_OPTIONS,
     occasionOptions: OCCASION_TAG_OPTIONS,
     prayerTimeOptions: PRAYER_TIME_TAG_OPTIONS
   });
@@ -1133,7 +1154,8 @@ app.post("/admin/niggunim", requireAuth, uploadForCreate, requireCsrfToken, asyn
   const notes = sanitizeText(req.body.notes || "");
   const lyrics = sanitizeText(req.body.lyrics || "");
   const tempo = sanitizeText(req.body.tempo || "");
-  const musicalKey = sanitizeText(req.body.musicalKey || "");
+  const mode = sanitizeText(req.body.mode || req.body.musicalKey || "");
+  const meter = sanitizeText(req.body.meter || "");
   const singers = parseCsvInput(req.body.singers || "");
   const authors = parseCsvInput(req.body.authors || "");
   const occasions = parseMultiSelectInput(req.body.occasions, OCCASION_TAG_OPTIONS);
@@ -1175,11 +1197,19 @@ app.post("/admin/niggunim", requireAuth, uploadForCreate, requireCsrfToken, asyn
     return res.redirect(returnTo);
   }
 
-  if (musicalKey && !MUSICAL_KEY_OPTIONS.includes(musicalKey)) {
+  if (mode && !MODE_OPTIONS.includes(mode)) {
     if (uploadedFile) {
       removeAudioFile(uploadedFile.filename);
     }
-    setFlash(req, "error", "Please choose a valid musical key.");
+    setFlash(req, "error", "Please choose a valid mode.");
+    return res.redirect(returnTo);
+  }
+
+  if (meter && !METER_OPTIONS.includes(meter)) {
+    if (uploadedFile) {
+      removeAudioFile(uploadedFile.filename);
+    }
+    setFlash(req, "error", "Please choose a valid meter.");
     return res.redirect(returnTo);
   }
 
@@ -1229,7 +1259,8 @@ app.post("/admin/niggunim", requireAuth, uploadForCreate, requireCsrfToken, asyn
       notes,
       lyrics,
       tempo,
-      musicalKey,
+      mode,
+      meter,
       singers,
       authors,
       occasions,
@@ -1275,7 +1306,8 @@ app.get("/admin/niggunim/:id/edit", requireAuth, (req, res) => {
     niggun,
     returnTo,
     tempoOptions: TEMPO_OPTIONS,
-    keyOptions: MUSICAL_KEY_OPTIONS,
+    modeOptions: MODE_OPTIONS,
+    meterOptions: METER_OPTIONS,
     occasionOptions: OCCASION_TAG_OPTIONS,
     prayerTimeOptions: PRAYER_TIME_TAG_OPTIONS
   });
@@ -1288,7 +1320,8 @@ app.post("/admin/niggunim/:id", requireAuth, uploadForEdit, requireCsrfToken, as
   const notes = sanitizeText(req.body.notes || "");
   const lyrics = sanitizeText(req.body.lyrics || "");
   const tempo = sanitizeText(req.body.tempo || "");
-  const musicalKey = sanitizeText(req.body.musicalKey || "");
+  const mode = sanitizeText(req.body.mode || req.body.musicalKey || "");
+  const meter = sanitizeText(req.body.meter || "");
   const singers = parseCsvInput(req.body.singers || "");
   const authors = parseCsvInput(req.body.authors || "");
   const occasions = parseMultiSelectInput(req.body.occasions, OCCASION_TAG_OPTIONS);
@@ -1347,11 +1380,19 @@ app.post("/admin/niggunim/:id", requireAuth, uploadForEdit, requireCsrfToken, as
     return res.redirect(returnTo);
   }
 
-  if (musicalKey && !MUSICAL_KEY_OPTIONS.includes(musicalKey)) {
+  if (mode && !MODE_OPTIONS.includes(mode)) {
     if (uploadedFile) {
       removeAudioFile(uploadedFile.filename);
     }
-    setFlash(req, "error", "Please choose a valid musical key.");
+    setFlash(req, "error", "Please choose a valid mode.");
+    return res.redirect(returnTo);
+  }
+
+  if (meter && !METER_OPTIONS.includes(meter)) {
+    if (uploadedFile) {
+      removeAudioFile(uploadedFile.filename);
+    }
+    setFlash(req, "error", "Please choose a valid meter.");
     return res.redirect(returnTo);
   }
 
@@ -1401,7 +1442,8 @@ app.post("/admin/niggunim/:id", requireAuth, uploadForEdit, requireCsrfToken, as
       notes,
       lyrics,
       tempo,
-      musicalKey,
+      mode,
+      meter,
       singers,
       authors,
       occasions,

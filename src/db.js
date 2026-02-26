@@ -33,6 +33,7 @@ function initializeSchema() {
       lyrics TEXT,
       tempo TEXT,
       musical_key TEXT,
+      meter TEXT,
       audio_path TEXT NOT NULL,
       audio_source_url TEXT,
       original_filename TEXT,
@@ -120,6 +121,10 @@ function initializeSchema() {
   if (!niggunColumns.has("lyrics")) {
     db.exec("ALTER TABLE niggunim ADD COLUMN lyrics TEXT");
   }
+  if (!niggunColumns.has("meter")) {
+    db.exec("ALTER TABLE niggunim ADD COLUMN meter TEXT");
+  }
+  db.exec("CREATE INDEX IF NOT EXISTS idx_niggunim_meter ON niggunim(meter)");
 
   try {
     db.exec(`
@@ -322,7 +327,8 @@ function toNiggunRecord(row) {
     notes: row.notes || "",
     lyrics: row.lyrics || "",
     tempo: row.tempo || "",
-    musicalKey: row.musicalKey || "",
+    mode: row.mode || "",
+    meter: row.meter || "",
     audioPath: row.audioPath,
     audioSourceUrl: row.audioSourceUrl || "",
     originalFilename: row.originalFilename || "",
@@ -554,19 +560,21 @@ const createNiggunTxn = db.transaction((payload) => {
         lyrics,
         tempo,
         musical_key,
+        meter,
         audio_path,
         audio_source_url,
         original_filename,
         mime_type
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       payload.title,
       payload.notes || null,
       payload.lyrics || null,
       payload.tempo || null,
-      payload.musicalKey || null,
+      payload.mode || null,
+      payload.meter || null,
       payload.audioPath,
       payload.audioSourceUrl || null,
       payload.originalFilename || null,
@@ -604,6 +612,7 @@ const updateNiggunTxn = db.transaction((payload) => {
          lyrics = ?,
          tempo = ?,
          musical_key = ?,
+         meter = ?,
          audio_path = ?,
          audio_source_url = ?,
          original_filename = ?,
@@ -614,7 +623,8 @@ const updateNiggunTxn = db.transaction((payload) => {
     payload.notes || null,
     payload.lyrics || null,
     payload.tempo || null,
-    payload.musicalKey || null,
+    payload.mode || null,
+    payload.meter || null,
     payload.audioPath,
     payload.audioSourceUrl || null,
     payload.originalFilename || null,
@@ -704,9 +714,14 @@ function buildNiggunWhereClause(filters = {}) {
     params.push(filters.tempo);
   }
 
-  if (filters.musicalKey) {
+  if (filters.mode) {
     conditions.push("n.musical_key = ?");
-    params.push(filters.musicalKey);
+    params.push(filters.mode);
+  }
+
+  if (filters.meter) {
+    conditions.push("n.meter = ?");
+    params.push(filters.meter);
   }
 
   if (filters.singer) {
@@ -802,7 +817,8 @@ function listNiggunim(filters = {}, options = {}) {
       n.notes,
       n.lyrics,
       n.tempo,
-      n.musical_key AS musicalKey,
+      n.musical_key AS mode,
+      n.meter AS meter,
       n.audio_path AS audioPath,
       n.audio_source_url AS audioSourceUrl,
       n.original_filename AS originalFilename,
@@ -845,7 +861,8 @@ function getNiggunById(niggunId) {
         n.notes,
         n.lyrics,
         n.tempo,
-        n.musical_key AS musicalKey,
+        n.musical_key AS mode,
+        n.meter AS meter,
         n.audio_path AS audioPath,
         n.audio_source_url AS audioSourceUrl,
         n.original_filename AS originalFilename,
@@ -895,17 +912,30 @@ function listAuthors() {
     .map((row) => row.name);
 }
 
-function listUsedMusicalKeys() {
+function listUsedModes() {
   return db
     .prepare(
-      `SELECT DISTINCT musical_key AS musicalKey
+      `SELECT DISTINCT musical_key AS mode
        FROM niggunim
        WHERE musical_key IS NOT NULL
          AND TRIM(musical_key) <> ''
        ORDER BY musical_key COLLATE NOCASE ASC`
     )
     .all()
-    .map((row) => row.musicalKey);
+    .map((row) => row.mode);
+}
+
+function listUsedMeters() {
+  return db
+    .prepare(
+      `SELECT DISTINCT meter AS meter
+       FROM niggunim
+       WHERE meter IS NOT NULL
+         AND TRIM(meter) <> ''
+       ORDER BY meter COLLATE NOCASE ASC`
+    )
+    .all()
+    .map((row) => row.meter);
 }
 
 const deleteNiggunTxn = db.transaction((niggunId) => {
@@ -953,6 +983,7 @@ module.exports = {
   getNiggunById,
   listSingers,
   listAuthors,
-  listUsedMusicalKeys,
+  listUsedModes,
+  listUsedMeters,
   deleteNiggun
 };

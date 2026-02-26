@@ -1,37 +1,7 @@
 const TEMPO_OPTIONS = ["Fast", "Medium", "Slow"];
 
-const MUSICAL_KEY_OPTIONS = [
-  "C Major",
-  "G Major",
-  "D Major",
-  "A Major",
-  "E Major",
-  "B Major",
-  "F# Major",
-  "C# Major",
-  "F Major",
-  "Bb Major",
-  "Eb Major",
-  "Ab Major",
-  "Db Major",
-  "Gb Major",
-  "Cb Major",
-  "A Minor",
-  "E Minor",
-  "B Minor",
-  "F# Minor",
-  "C# Minor",
-  "G# Minor",
-  "D# Minor",
-  "A# Minor",
-  "D Minor",
-  "G Minor",
-  "C Minor",
-  "F Minor",
-  "Bb Minor",
-  "Eb Minor",
-  "Ab Minor"
-];
+const MODE_OPTIONS = ["Major", "Minor", "Ahavah Rabbah (Freygish)", "Magen Avot", "Adonai Malach"];
+const METER_OPTIONS = ["4/4", "3/4", "6/8", "Other"];
 
 const OCCASION_TAG_OPTIONS = [
   "Weekday",
@@ -78,7 +48,8 @@ const ALLOWED_AUDIO_EXTENSIONS = new Set([
 
 module.exports = {
   TEMPO_OPTIONS,
-  MUSICAL_KEY_OPTIONS,
+  MODE_OPTIONS,
+  METER_OPTIONS,
   OCCASION_TAG_OPTIONS,
   PRAYER_TIME_TAG_OPTIONS,
   MAX_AUDIO_BYTES,
