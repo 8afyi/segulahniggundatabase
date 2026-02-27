@@ -47,6 +47,14 @@ fail() {
   exit 1
 }
 
+git_auth_help() {
+  if [[ "$REPO_URL" == git@* || "$REPO_URL" == ssh://* ]]; then
+    fail "Git authentication failed for ${APP_USER}. SSH repo URL requires an SSH key for this user (for example, /home/${APP_USER}/.ssh/id_ed25519) and GitHub access. Or re-run with an HTTPS --repo-url."
+  fi
+
+  fail "Git authentication failed for ${APP_USER}. Ensure this user can access the repo URL (for private repos use HTTPS with credentials or configure SSH deploy keys)."
+}
+
 require_root() {
   if [[ "${EUID}" -ne 0 ]]; then
     fail "This script must be run as root."
@@ -157,13 +165,26 @@ checkout_or_update_repo() {
   if [[ -d "$APP_DIR/.git" ]]; then
     log "Updating existing repository in $APP_DIR"
     chown -R "$APP_USER:$APP_GROUP" "$APP_DIR"
-    runuser -u "$APP_USER" -- git -C "$APP_DIR" fetch origin "$BRANCH"
+
+    if runuser -u "$APP_USER" -- git -C "$APP_DIR" remote get-url origin >/dev/null 2>&1; then
+      runuser -u "$APP_USER" -- git -C "$APP_DIR" remote set-url origin "$REPO_URL"
+    else
+      runuser -u "$APP_USER" -- git -C "$APP_DIR" remote add origin "$REPO_URL"
+    fi
+
+    if ! runuser -u "$APP_USER" -- git -C "$APP_DIR" fetch origin "$BRANCH"; then
+      git_auth_help
+    fi
+
     runuser -u "$APP_USER" -- git -C "$APP_DIR" checkout "$BRANCH"
     runuser -u "$APP_USER" -- git -C "$APP_DIR" pull --ff-only origin "$BRANCH"
   else
     log "Cloning repository to $APP_DIR"
     chown "$APP_USER:$APP_GROUP" "$APP_DIR"
-    runuser -u "$APP_USER" -- git clone --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
+
+    if ! runuser -u "$APP_USER" -- git clone --branch "$BRANCH" "$REPO_URL" "$APP_DIR"; then
+      git_auth_help
+    fi
   fi
 
   chown -R "$APP_USER:$APP_GROUP" "$APP_DIR"
