@@ -1,5 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=Merriweather:wght@300;400;700;900&family=Montserrat:wght@500;700;800&display=swap");
-
 :root {
   --segulah-purple: #732c8a;
   --ink: #1a1a1a;
@@ -24,7 +22,7 @@ body {
 body {
   background: var(--segulah-purple);
   color: var(--ink);
-  font-family: "Merriweather", Georgia, serif;
+  font-family: sans-serif;
   font-size: 1rem;
   line-height: 1.75;
 }
@@ -51,7 +49,7 @@ h4,
 h5,
 h6 {
   color: var(--ink);
-  font-family: "Montserrat", "Arial Narrow", Arial, sans-serif;
+  font-family: sans-serif;
   font-weight: 700;
   letter-spacing: 0.01em;
   line-height: 1.25;
@@ -92,7 +90,7 @@ img {
 }
 
 .site-footer-text {
-  font-family: "Montserrat", "Arial Narrow", Arial, sans-serif;
+  font-family: sans-serif;
   font-size: 0.9rem;
   margin: 0;
   text-align: center;
@@ -190,7 +188,7 @@ img {
 
 .filter-accordion-title {
   color: var(--ink);
-  font-family: "Montserrat", "Arial Narrow", Arial, sans-serif;
+  font-family: sans-serif;
   font-size: 1.45rem;
   font-weight: 700;
   line-height: 1.25;
@@ -258,7 +256,7 @@ img {
 
 .active-filter-label {
   color: var(--muted);
-  font-family: "Montserrat", "Arial Narrow", Arial, sans-serif;
+  font-family: sans-serif;
   font-size: 0.84rem;
   font-weight: 700;
 }
@@ -293,7 +291,7 @@ img {
   border: 1px solid var(--line);
   color: var(--ink);
   display: inline-block;
-  font-family: "Montserrat", "Arial Narrow", Arial, sans-serif;
+  font-family: sans-serif;
   font-size: 0.9rem;
   font-weight: 700;
   padding: 0.35rem 0.75rem;
@@ -323,7 +321,7 @@ img {
 label {
   display: grid;
   gap: 0.35rem;
-  font-family: "Montserrat", "Arial Narrow", Arial, sans-serif;
+  font-family: sans-serif;
   font-size: 0.92rem;
   font-weight: 700;
 }
@@ -335,7 +333,7 @@ label {
 }
 
 .checkbox-fieldset legend {
-  font-family: "Montserrat", "Arial Narrow", Arial, sans-serif;
+  font-family: sans-serif;
   font-size: 0.88rem;
   font-weight: 700;
   padding: 0 0.35rem;
@@ -350,7 +348,7 @@ label {
 .checkbox-item {
   align-items: center;
   display: flex;
-  font-family: "Merriweather", Georgia, serif;
+  font-family: sans-serif;
   font-size: 0.95rem;
   font-weight: 400;
   gap: 0.4rem;
@@ -393,7 +391,7 @@ button,
 .button-danger {
   border: 1px solid var(--ink);
   display: inline-block;
-  font-family: "Montserrat", "Arial Narrow", Arial, sans-serif;
+  font-family: sans-serif;
   font-weight: 700;
   letter-spacing: 0.02em;
   padding: 0.5rem 0.9rem;
@@ -482,7 +480,7 @@ button:focus-visible {
   border-radius: 999px;
   color: #4b245d;
   display: inline-flex;
-  font-family: "Montserrat", "Arial Narrow", Arial, sans-serif;
+  font-family: sans-serif;
   font-size: 0.78rem;
   font-weight: 700;
   line-height: 1.1;
@@ -535,7 +533,7 @@ button:focus-visible {
 
 .pagination-status {
   color: var(--muted);
-  font-family: "Montserrat", "Arial Narrow", Arial, sans-serif;
+  font-family: sans-serif;
   font-size: 0.9rem;
   font-weight: 700;
 }
@@ -549,7 +547,7 @@ button:focus-visible {
 
 .flash {
   border: 1px solid transparent;
-  font-family: "Montserrat", "Arial Narrow", Arial, sans-serif;
+  font-family: sans-serif;
   font-weight: 700;
   margin-bottom: 1rem;
   padding: 0.65rem 0.75rem;
@@ -602,7 +600,7 @@ td form {
 }
 
 th {
-  font-family: "Montserrat", "Arial Narrow", Arial, sans-serif;
+  font-family: sans-serif;
   font-size: 0.9rem;
 }
 
@@ -675,7 +673,7 @@ th {
     color: var(--muted);
     content: attr(data-label);
     flex: 0 0 5.4rem;
-    font-family: "Montserrat", "Arial Narrow", Arial, sans-serif;
+    font-family: sans-serif;
     font-size: 0.76rem;
     font-weight: 700;
     letter-spacing: 0.03em;
