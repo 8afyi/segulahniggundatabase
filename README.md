@@ -1,47 +1,4 @@
-# Segulah Niggun Database (MVP)
-
-MVP web application for a public niggun catalog with an admin panel.
-
-## Stack choice
-- Frontend: server-rendered EJS templates + vanilla CSS/JS
-- Backend: Node.js + Express
-- Database: SQLite (`better-sqlite3`)
-- Auth: session cookie auth (`express-session` + Redis store)
-
-Why this stack for MVP:
-- Fast to build and deploy on Ubuntu
-- Low ops overhead (single service + local DB + filesystem audio storage)
-- Easy path to scale later (swap DB/storage with minimal route changes)
-
-## Features
-- Public catalog open to everyone (no login)
-- Basic search on `/` (title/notes/singer/composer text query + tempo + mode)
-- Advanced search on `/advanced-search` (full filter set: meter/singer/composer/tags/sort)
-- SQLite FTS5-backed text search (with automatic fallback to LIKE if FTS5 is unavailable)
-- Additional tag filters:
-  - Service tags: Weekday, Shabbat, Festivals, Rosh Chodesh, High Holidays
-  - Prayer tags: Shacharit, Musaf, Minchah, Maariv
-- Public/admin list sorting and pagination
-- Admin catalog and public advanced-search filter parity (query state preserved across pagination/actions)
-- Niggun detail card with built-in audio player
-- Admin auth with first-run setup flow
-- Admin user management (add/remove users, reset passwords)
-- Niggun management (add/edit/remove)
-- Audio input via upload or URL (downloaded and stored server-side)
-- Redis-backed sessions (no in-memory session store)
-- CSRF protection for admin POST actions
-- Login hardening: IP rate limiting + temporary lockout after repeated failures
-- Upload constraints:
-  - max file size `20MB`
-  - only browser-playable audio types
-
-## Data model summary
-- `users`
-- `niggunim`
-- `singers` + `niggun_singers` (many-to-many)
-- `authors` + `niggun_authors` (many-to-many, used for composer names)
-- `occasions` + `niggun_occasions` (many-to-many)
-- `prayer_times` + `niggun_prayer_times` (many-to-many)
+# Segulah Niggun Database 
 
 ## Run locally
 1. Install dependencies:
@@ -67,32 +24,28 @@ Why this stack for MVP:
    - Public site: `http://localhost:3000`
    - First-run admin setup: `http://localhost:3000/admin/setup`
 
-## Deploy helper (fresh Ubuntu)
-Use `scripts/deploy-production-ubuntu.sh` on the server as `root`.
+## Deploy helper 
+Use `scripts/deploy-production-ubuntu-debian.sh` on the server as `root`.
 
 Example (with TLS):
 ```bash
-sudo ./scripts/deploy-production-ubuntu.sh \
-  --repo-url git@github.com:YOUR_ORG/YOUR_REPO.git \
-  --branch main \
+sudo ./scripts/deploy-production-ubuntu-debian.sh \
+  --repo-url https://github.com/8afyi/segulahniggundatabase.git \
   --domain niggun.example.com \
   --email admin@example.com \
-  --redis-url redis://127.0.0.1:6379 \
   --port 3000
 ```
 
 Example (no domain/TLS yet):
 ```bash
-sudo ./scripts/deploy-production-ubuntu.sh \
-  --repo-url git@github.com:YOUR_ORG/YOUR_REPO.git \
-  --branch main \
-  --redis-url redis://127.0.0.1:6379 \
+sudo ./scripts/deploy-production-ubuntu-debian.sh \
+  --repo-url https://github.com/8afyi/segulahniggundatabase.git \
   --port 3000 \
   --skip-certbot
 ```
 
 What the script does:
-- Installs system packages (`git`, `nginx`, `ufw`, `sqlite3`, `rsync`, Node.js 20, etc.)
+- Installs required system packages
 - Creates an app user and deploys code to `/srv/segulah-niggun-database`
 - Installs production Node dependencies
 - Installs and enables local `redis-server`
@@ -127,11 +80,11 @@ sudo systemctl status segulah-niggun-database-backup.timer
 sudo systemctl list-timers | grep segulah-niggun-database-backup
 ```
 
-## Production notes (Ubuntu/Debian/Rocky)
+## Production notes (Ubuntu/Debian)
 - Deploy helper scripts:
+  - Ubuntu + Debian (unified): `scripts/deploy-production-ubuntu-debian.sh`
   - Ubuntu: `scripts/deploy-production-ubuntu.sh`
   - Debian 13: `scripts/deploy-production-debian13.sh`
-  - Rocky Linux 10: `scripts/deploy-production-rocky10.sh`
 - Set a strong `SESSION_SECRET`
 - In production, startup fails if `SESSION_SECRET` is missing, too short, or left at the development fallback value
 - Keep Redis local-only (`127.0.0.1`) unless you intentionally externalize it

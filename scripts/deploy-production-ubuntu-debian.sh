@@ -11,13 +11,13 @@ DOMAIN=""
 LETSENCRYPT_EMAIL=""
 PORT="3000"
 REDIS_URL="redis://127.0.0.1:6379"
-ENABLE_FIREWALLD="1"
+ENABLE_UFW="1"
 SKIP_CERTBOT="0"
 
 usage() {
   cat <<'USAGE'
 Usage:
-  sudo ./scripts/deploy-production-rocky10.sh \
+  sudo ./scripts/deploy-production-ubuntu-debian.sh \
     --repo-url <git_repo_url> \
     [--branch main] \
     [--domain example.com] \
@@ -27,11 +27,11 @@ Usage:
     [--app-name segulah-niggun-database] \
     [--app-user segulah] \
     [--app-dir /srv/segulah-niggun-database] \
-    [--no-firewalld] \
+    [--no-ufw] \
     [--skip-certbot]
 
 Notes:
-- Run as root on a Rocky Linux 10 host.
+- Run as root on an Ubuntu or Debian host.
 - --repo-url is required.
 - If both --domain and --email are provided, TLS is configured with certbot.
 - Re-running the script updates code and keeps existing SESSION_SECRET.
@@ -53,7 +53,7 @@ require_root() {
   fi
 }
 
-require_rocky10() {
+require_ubuntu_or_debian() {
   if [[ ! -f /etc/os-release ]]; then
     fail "/etc/os-release not found; cannot validate operating system."
   fi
@@ -61,13 +61,16 @@ require_rocky10() {
   # shellcheck disable=SC1091
   source /etc/os-release
 
-  if [[ "${ID:-}" != "rocky" ]]; then
-    fail "Unsupported OS (${ID:-unknown}). Use this script only on Rocky Linux 10."
-  fi
+  case "${ID:-}" in
+    ubuntu|debian)
+      ;;
+    *)
+      fail "Unsupported OS (${ID:-unknown}). Use this script only on Ubuntu or Debian."
+      ;;
+  esac
 
-  local major_version="${VERSION_ID%%.*}"
-  if [[ "$major_version" != "10" ]]; then
-    fail "Unsupported Rocky version (${VERSION_ID:-unknown}). This script targets Rocky Linux 10."
+  if ! command -v apt-get >/dev/null 2>&1; then
+    fail "apt-get is required. This script supports apt-based Ubuntu/Debian hosts."
   fi
 }
 
@@ -111,8 +114,8 @@ parse_args() {
         APP_DIR="${2:-}"
         shift 2
         ;;
-      --no-firewalld)
-        ENABLE_FIREWALLD="0"
+      --no-ufw)
+        ENABLE_UFW="0"
         shift
         ;;
       --skip-certbot)
@@ -139,20 +142,8 @@ parse_args() {
   fi
 }
 
-dnf_install() {
-  dnf install -y --setopt=install_weak_deps=False "$@"
-}
-
-install_epel_if_available() {
-  if rpm -q epel-release >/dev/null 2>&1; then
-    return
-  fi
-
-  if dnf install -y --setopt=install_weak_deps=False epel-release >/dev/null 2>&1; then
-    log "Installed epel-release"
-  else
-    log "epel-release package not available; continuing without it"
-  fi
+apt_install() {
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@"
 }
 
 install_nodejs() {
@@ -165,32 +156,13 @@ install_nodejs() {
     fi
   fi
 
-  log "Installing Node.js 20.x (NodeSource)"
-  rpm --import https://rpm.nodesource.com/gpgkey/nodesource-repo.gpg.key
-
-  cat > /etc/yum.repos.d/nodesource-nodejs.repo <<'REPO'
-[nodesource-nodejs]
-name=Node.js Packages for Enterprise Linux - $basearch
-baseurl=https://rpm.nodesource.com/pub_20.x/el/$releasever/$basearch
-enabled=1
-gpgcheck=1
-repo_gpgcheck=0
-gpgkey=https://rpm.nodesource.com/gpgkey/nodesource-repo.gpg.key
-module_hotfixes=1
-REPO
-
-  dnf clean all
-  dnf makecache -y
-  dnf_install nodejs
-
-  if ! command -v node >/dev/null 2>&1; then
-    fail "Node.js installation failed."
-  fi
-
-  major="$(node -p "process.versions.node.split('.')[0]")"
-  if [[ "$major" -lt 20 ]]; then
-    fail "Node.js >= 20 is required, found $(node -v)."
-  fi
+  log "Installing Node.js 20.x"
+  mkdir -p /etc/apt/keyrings
+  curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor --yes -o /etc/apt/keyrings/nodesource.gpg
+  echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" \
+    > /etc/apt/sources.list.d/nodesource.list
+  apt-get update
+  apt_install nodejs
 }
 
 ensure_app_user() {
@@ -244,7 +216,7 @@ ensure_redis_service() {
   fi
 
   local candidate
-  for candidate in redis redis-server redis.service redis-server.service; do
+  for candidate in redis-server redis redis-server.service redis.service; do
     systemctl unmask "$candidate" >/dev/null 2>&1 || true
     if systemctl enable --now "$candidate" >/dev/null 2>&1; then
       log "Enabled Redis service (${candidate})"
@@ -300,7 +272,7 @@ write_systemd_service() {
   cat > "$service_file" <<SERVICE
 [Unit]
 Description=Segulah Niggun Database
-After=network-online.target redis.service redis-server.service
+After=network-online.target redis-server.service redis.service
 Wants=network-online.target
 
 [Service]
@@ -362,13 +334,13 @@ TIMER
 
 write_nginx_config() {
   local server_name="_"
-  local nginx_conf="/etc/nginx/conf.d/${APP_NAME}.conf"
+  local nginx_site="/etc/nginx/sites-available/${APP_NAME}"
 
   if [[ -n "$DOMAIN" ]]; then
     server_name="$DOMAIN"
   fi
 
-  cat > "$nginx_conf" <<NGINX
+  cat > "$nginx_site" <<NGINX
 server {
     listen 80;
     listen [::]:80;
@@ -389,49 +361,23 @@ server {
 }
 NGINX
 
-  rm -f /etc/nginx/conf.d/default.conf
+  ln -sfn "$nginx_site" "/etc/nginx/sites-enabled/${APP_NAME}"
+  rm -f /etc/nginx/sites-enabled/default
   nginx -t
-  systemctl enable nginx
   systemctl restart nginx
+  systemctl enable nginx
 }
 
 setup_firewall() {
-  if [[ "$ENABLE_FIREWALLD" != "1" ]]; then
-    log "Skipping firewalld configuration (--no-firewalld)"
+  if [[ "$ENABLE_UFW" != "1" ]]; then
+    log "Skipping UFW configuration (--no-ufw)"
     return
   fi
 
-  if ! command -v firewall-cmd >/dev/null 2>&1; then
-    dnf_install firewalld
-  fi
-
-  log "Configuring firewalld"
-  systemctl enable --now firewalld
-  firewall-cmd --permanent --add-service=ssh
-  firewall-cmd --permanent --add-service=http
-  firewall-cmd --permanent --add-service=https
-  firewall-cmd --reload
-}
-
-configure_selinux_for_nginx_proxy() {
-  if ! command -v getenforce >/dev/null 2>&1; then
-    return
-  fi
-
-  local selinux_state
-  selinux_state="$(getenforce || true)"
-  if [[ "$selinux_state" == "Disabled" ]]; then
-    return
-  fi
-
-  if ! command -v setsebool >/dev/null 2>&1; then
-    dnf_install policycoreutils-python-utils
-  fi
-
-  if command -v setsebool >/dev/null 2>&1; then
-    log "Enabling SELinux boolean httpd_can_network_connect for Nginx reverse proxy"
-    setsebool -P httpd_can_network_connect 1
-  fi
+  log "Configuring UFW"
+  ufw allow OpenSSH
+  ufw allow 'Nginx Full'
+  ufw --force enable
 }
 
 setup_tls_if_requested() {
@@ -446,7 +392,7 @@ setup_tls_if_requested() {
   fi
 
   log "Installing certbot and requesting certificate for ${DOMAIN}"
-  dnf_install certbot python3-certbot-nginx
+  apt_install certbot python3-certbot-nginx
   certbot --nginx \
     --non-interactive \
     --agree-tos \
@@ -459,12 +405,11 @@ setup_tls_if_requested() {
 main() {
   parse_args "$@"
   require_root
-  require_rocky10
+  require_ubuntu_or_debian
 
   log "Installing base packages"
-  dnf makecache -y
-  dnf_install ca-certificates curl gnupg2 git nginx openssl redis rsync sqlite policycoreutils-python-utils
-  install_epel_if_available
+  apt-get update
+  apt_install ca-certificates curl gnupg git nginx openssl redis-server rsync sqlite3 ufw
 
   install_nodejs
   ensure_app_user
@@ -477,7 +422,6 @@ main() {
   write_systemd_service
   write_backup_timer
   write_nginx_config
-  configure_selinux_for_nginx_proxy
   setup_firewall
   setup_tls_if_requested
 
