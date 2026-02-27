@@ -127,7 +127,11 @@ sudo systemctl status segulah-niggun-database-backup.timer
 sudo systemctl list-timers | grep segulah-niggun-database-backup
 ```
 
-## Production notes (Ubuntu)
+## Production notes (Ubuntu/Debian/Rocky)
+- Deploy helper scripts:
+  - Ubuntu: `scripts/deploy-production-ubuntu.sh`
+  - Debian 13: `scripts/deploy-production-debian13.sh`
+  - Rocky Linux 10: `scripts/deploy-production-rocky10.sh`
 - Set a strong `SESSION_SECRET`
 - In production, startup fails if `SESSION_SECRET` is missing, too short, or left at the development fallback value
 - Keep Redis local-only (`127.0.0.1`) unless you intentionally externalize it

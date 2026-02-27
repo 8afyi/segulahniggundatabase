@@ -1,0 +1,497 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+APP_NAME="segulah-niggun-database"
+APP_USER="segulah"
+APP_GROUP="segulah"
+APP_DIR="/srv/segulah-niggun-database"
+REPO_URL=""
+BRANCH="main"
+DOMAIN=""
+LETSENCRYPT_EMAIL=""
+PORT="3000"
+REDIS_URL="redis://127.0.0.1:6379"
+ENABLE_FIREWALLD="1"
+SKIP_CERTBOT="0"
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  sudo ./scripts/deploy-production-rocky10.sh \
+    --repo-url <git_repo_url> \
+    [--branch main] \
+    [--domain example.com] \
+    [--email admin@example.com] \
+    [--port 3000] \
+    [--redis-url redis://127.0.0.1:6379] \
+    [--app-name segulah-niggun-database] \
+    [--app-user segulah] \
+    [--app-dir /srv/segulah-niggun-database] \
+    [--no-firewalld] \
+    [--skip-certbot]
+
+Notes:
+- Run as root on a Rocky Linux 10 host.
+- --repo-url is required.
+- If both --domain and --email are provided, TLS is configured with certbot.
+- Re-running the script updates code and keeps existing SESSION_SECRET.
+USAGE
+}
+
+log() {
+  printf '\n[%s] %s\n' "$(date +'%Y-%m-%d %H:%M:%S')" "$1"
+}
+
+fail() {
+  echo "ERROR: $1" >&2
+  exit 1
+}
+
+require_root() {
+  if [[ "${EUID}" -ne 0 ]]; then
+    fail "This script must be run as root."
+  fi
+}
+
+require_rocky10() {
+  if [[ ! -f /etc/os-release ]]; then
+    fail "/etc/os-release not found; cannot validate operating system."
+  fi
+
+  # shellcheck disable=SC1091
+  source /etc/os-release
+
+  if [[ "${ID:-}" != "rocky" ]]; then
+    fail "Unsupported OS (${ID:-unknown}). Use this script only on Rocky Linux 10."
+  fi
+
+  local major_version="${VERSION_ID%%.*}"
+  if [[ "$major_version" != "10" ]]; then
+    fail "Unsupported Rocky version (${VERSION_ID:-unknown}). This script targets Rocky Linux 10."
+  fi
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --repo-url)
+        REPO_URL="${2:-}"
+        shift 2
+        ;;
+      --branch)
+        BRANCH="${2:-}"
+        shift 2
+        ;;
+      --domain)
+        DOMAIN="${2:-}"
+        shift 2
+        ;;
+      --email)
+        LETSENCRYPT_EMAIL="${2:-}"
+        shift 2
+        ;;
+      --port)
+        PORT="${2:-}"
+        shift 2
+        ;;
+      --redis-url)
+        REDIS_URL="${2:-}"
+        shift 2
+        ;;
+      --app-name)
+        APP_NAME="${2:-}"
+        shift 2
+        ;;
+      --app-user)
+        APP_USER="${2:-}"
+        APP_GROUP="${2:-}"
+        shift 2
+        ;;
+      --app-dir)
+        APP_DIR="${2:-}"
+        shift 2
+        ;;
+      --no-firewalld)
+        ENABLE_FIREWALLD="0"
+        shift
+        ;;
+      --skip-certbot)
+        SKIP_CERTBOT="1"
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        fail "Unknown argument: $1"
+        ;;
+    esac
+  done
+
+  [[ -n "$REPO_URL" ]] || fail "--repo-url is required"
+  [[ -n "$BRANCH" ]] || fail "--branch cannot be empty"
+  [[ "$PORT" =~ ^[0-9]+$ ]] || fail "--port must be numeric"
+  [[ -n "$REDIS_URL" ]] || fail "--redis-url cannot be empty"
+
+  if [[ -n "$LETSENCRYPT_EMAIL" && -z "$DOMAIN" ]]; then
+    fail "--email requires --domain"
+  fi
+}
+
+dnf_install() {
+  dnf install -y --setopt=install_weak_deps=False "$@"
+}
+
+install_epel_if_available() {
+  if rpm -q epel-release >/dev/null 2>&1; then
+    return
+  fi
+
+  if dnf install -y --setopt=install_weak_deps=False epel-release >/dev/null 2>&1; then
+    log "Installed epel-release"
+  else
+    log "epel-release package not available; continuing without it"
+  fi
+}
+
+install_nodejs() {
+  local major
+  if command -v node >/dev/null 2>&1; then
+    major="$(node -p "process.versions.node.split('.')[0]")"
+    if [[ "$major" -ge 20 ]]; then
+      log "Node.js $(node -v) already installed"
+      return
+    fi
+  fi
+
+  log "Installing Node.js 20.x (NodeSource)"
+  rpm --import https://rpm.nodesource.com/gpgkey/nodesource-repo.gpg.key
+
+  cat > /etc/yum.repos.d/nodesource-nodejs.repo <<'REPO'
+[nodesource-nodejs]
+name=Node.js Packages for Enterprise Linux - $basearch
+baseurl=https://rpm.nodesource.com/pub_20.x/el/$releasever/$basearch
+enabled=1
+gpgcheck=1
+repo_gpgcheck=0
+gpgkey=https://rpm.nodesource.com/gpgkey/nodesource-repo.gpg.key
+module_hotfixes=1
+REPO
+
+  dnf clean all
+  dnf makecache -y
+  dnf_install nodejs
+
+  if ! command -v node >/dev/null 2>&1; then
+    fail "Node.js installation failed."
+  fi
+
+  major="$(node -p "process.versions.node.split('.')[0]")"
+  if [[ "$major" -lt 20 ]]; then
+    fail "Node.js >= 20 is required, found $(node -v)."
+  fi
+}
+
+ensure_app_user() {
+  if ! id -u "$APP_USER" >/dev/null 2>&1; then
+    log "Creating system user: $APP_USER"
+    useradd --system --create-home --shell /bin/bash "$APP_USER"
+  fi
+}
+
+checkout_or_update_repo() {
+  install -d -m 0755 "$APP_DIR"
+
+  if [[ -d "$APP_DIR/.git" ]]; then
+    log "Updating existing repository in $APP_DIR"
+    chown -R "$APP_USER:$APP_GROUP" "$APP_DIR"
+    runuser -u "$APP_USER" -- git -C "$APP_DIR" fetch origin "$BRANCH"
+    runuser -u "$APP_USER" -- git -C "$APP_DIR" checkout "$BRANCH"
+    runuser -u "$APP_USER" -- git -C "$APP_DIR" pull --ff-only origin "$BRANCH"
+  else
+    log "Cloning repository to $APP_DIR"
+    chown "$APP_USER:$APP_GROUP" "$APP_DIR"
+    runuser -u "$APP_USER" -- git clone --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
+  fi
+
+  chown -R "$APP_USER:$APP_GROUP" "$APP_DIR"
+}
+
+install_node_deps() {
+  log "Installing Node dependencies"
+  if [[ -f "$APP_DIR/package-lock.json" ]]; then
+    runuser -u "$APP_USER" -- bash -lc "cd '$APP_DIR' && npm ci --omit=dev"
+  else
+    runuser -u "$APP_USER" -- bash -lc "cd '$APP_DIR' && npm install --omit=dev"
+  fi
+}
+
+ensure_runtime_dirs() {
+  install -d -m 0755 -o "$APP_USER" -g "$APP_GROUP" "$APP_DIR/data"
+  install -d -m 0755 -o "$APP_USER" -g "$APP_GROUP" "$APP_DIR/uploads"
+  install -d -m 0755 -o "$APP_USER" -g "$APP_GROUP" "$APP_DIR/uploads/audio"
+}
+
+ensure_helper_scripts_executable() {
+  chmod +x "$APP_DIR/scripts/backup-data.sh"
+  chmod +x "$APP_DIR/scripts/restore-data.sh"
+}
+
+ensure_redis_service() {
+  if [[ ! -d /run/systemd/system ]]; then
+    fail "systemd is not running on this host. Cannot enable Redis service with systemctl."
+  fi
+
+  local candidate
+  for candidate in redis redis-server redis.service redis-server.service; do
+    systemctl unmask "$candidate" >/dev/null 2>&1 || true
+    if systemctl enable --now "$candidate" >/dev/null 2>&1; then
+      log "Enabled Redis service (${candidate})"
+      return
+    fi
+  done
+
+  local discovered_units
+  discovered_units="$(ls /etc/systemd/system/redis*.service /lib/systemd/system/redis*.service /usr/lib/systemd/system/redis*.service 2>/dev/null || true)"
+
+  if [[ -n "$discovered_units" ]]; then
+    echo "Detected Redis-related systemd unit files:" >&2
+    echo "$discovered_units" >&2
+  else
+    echo "No Redis-related unit files found under /etc/systemd/system, /lib/systemd/system, or /usr/lib/systemd/system." >&2
+  fi
+
+  fail "Could not enable Redis service. Try: systemctl daemon-reload && systemctl list-unit-files | grep -i redis"
+}
+
+write_env_file() {
+  local env_file="/etc/${APP_NAME}.env"
+  local session_secret=""
+
+  if [[ -f "$env_file" ]]; then
+    session_secret="$(grep -E '^SESSION_SECRET=' "$env_file" | head -n1 | cut -d= -f2- || true)"
+  fi
+
+  if [[ -z "$session_secret" ]]; then
+    session_secret="$(openssl rand -hex 48)"
+  fi
+
+  cat > "$env_file" <<ENV
+NODE_ENV=production
+PORT=${PORT}
+SESSION_SECRET=${session_secret}
+DB_PATH=${APP_DIR}/data/app.db
+SESSION_STORE=redis
+REDIS_URL=${REDIS_URL}
+TRUST_PROXY=1
+LOGIN_FAILURE_LIMIT=5
+LOGIN_FAILURE_WINDOW_MINUTES=15
+LOGIN_LOCKOUT_MINUTES=15
+LOGIN_RATE_LIMIT_MAX=20
+ENV
+
+  chmod 0600 "$env_file"
+}
+
+write_systemd_service() {
+  local service_file="/etc/systemd/system/${APP_NAME}.service"
+
+  cat > "$service_file" <<SERVICE
+[Unit]
+Description=Segulah Niggun Database
+After=network-online.target redis.service redis-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=${APP_USER}
+Group=${APP_GROUP}
+WorkingDirectory=${APP_DIR}
+EnvironmentFile=/etc/${APP_NAME}.env
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=${APP_DIR}/data ${APP_DIR}/uploads/audio
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+
+  systemctl daemon-reload
+  systemctl enable "$APP_NAME"
+  systemctl restart "$APP_NAME"
+}
+
+write_backup_timer() {
+  local backup_service_file="/etc/systemd/system/${APP_NAME}-backup.service"
+  local backup_timer_file="/etc/systemd/system/${APP_NAME}-backup.timer"
+
+  cat > "$backup_service_file" <<SERVICE
+[Unit]
+Description=Backup ${APP_NAME} data
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=${APP_DIR}/scripts/backup-data.sh --app-name ${APP_NAME} --app-dir ${APP_DIR} --env-file /etc/${APP_NAME}.env --backup-dir /var/backups/${APP_NAME} --retention-days 14
+SERVICE
+
+  cat > "$backup_timer_file" <<TIMER
+[Unit]
+Description=Daily backup timer for ${APP_NAME}
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=10m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+TIMER
+
+  systemctl daemon-reload
+  systemctl enable --now "${APP_NAME}-backup.timer"
+}
+
+write_nginx_config() {
+  local server_name="_"
+  local nginx_conf="/etc/nginx/conf.d/${APP_NAME}.conf"
+
+  if [[ -n "$DOMAIN" ]]; then
+    server_name="$DOMAIN"
+  fi
+
+  cat > "$nginx_conf" <<NGINX
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${server_name};
+
+    client_max_body_size 20M;
+
+    location / {
+        proxy_pass http://127.0.0.1:${PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+NGINX
+
+  rm -f /etc/nginx/conf.d/default.conf
+  nginx -t
+  systemctl enable nginx
+  systemctl restart nginx
+}
+
+setup_firewall() {
+  if [[ "$ENABLE_FIREWALLD" != "1" ]]; then
+    log "Skipping firewalld configuration (--no-firewalld)"
+    return
+  fi
+
+  if ! command -v firewall-cmd >/dev/null 2>&1; then
+    dnf_install firewalld
+  fi
+
+  log "Configuring firewalld"
+  systemctl enable --now firewalld
+  firewall-cmd --permanent --add-service=ssh
+  firewall-cmd --permanent --add-service=http
+  firewall-cmd --permanent --add-service=https
+  firewall-cmd --reload
+}
+
+configure_selinux_for_nginx_proxy() {
+  if ! command -v getenforce >/dev/null 2>&1; then
+    return
+  fi
+
+  local selinux_state
+  selinux_state="$(getenforce || true)"
+  if [[ "$selinux_state" == "Disabled" ]]; then
+    return
+  fi
+
+  if ! command -v setsebool >/dev/null 2>&1; then
+    dnf_install policycoreutils-python-utils
+  fi
+
+  if command -v setsebool >/dev/null 2>&1; then
+    log "Enabling SELinux boolean httpd_can_network_connect for Nginx reverse proxy"
+    setsebool -P httpd_can_network_connect 1
+  fi
+}
+
+setup_tls_if_requested() {
+  if [[ "$SKIP_CERTBOT" == "1" ]]; then
+    log "Skipping certbot setup (--skip-certbot)"
+    return
+  fi
+
+  if [[ -z "$DOMAIN" || -z "$LETSENCRYPT_EMAIL" ]]; then
+    log "TLS skipped (provide both --domain and --email to enable certbot)"
+    return
+  fi
+
+  log "Installing certbot and requesting certificate for ${DOMAIN}"
+  dnf_install certbot python3-certbot-nginx
+  certbot --nginx \
+    --non-interactive \
+    --agree-tos \
+    --email "$LETSENCRYPT_EMAIL" \
+    --redirect \
+    --keep-until-expiring \
+    -d "$DOMAIN"
+}
+
+main() {
+  parse_args "$@"
+  require_root
+  require_rocky10
+
+  log "Installing base packages"
+  dnf makecache -y
+  dnf_install ca-certificates curl gnupg2 git nginx openssl redis rsync sqlite policycoreutils-python-utils
+  install_epel_if_available
+
+  install_nodejs
+  ensure_app_user
+  checkout_or_update_repo
+  install_node_deps
+  ensure_runtime_dirs
+  ensure_helper_scripts_executable
+  ensure_redis_service
+  write_env_file
+  write_systemd_service
+  write_backup_timer
+  write_nginx_config
+  configure_selinux_for_nginx_proxy
+  setup_firewall
+  setup_tls_if_requested
+
+  log "Deployment complete"
+  echo ""
+  echo "Service status:"
+  systemctl --no-pager --full status "$APP_NAME" || true
+  echo ""
+  echo "Useful commands:"
+  echo "  journalctl -u ${APP_NAME} -f"
+  echo "  systemctl restart ${APP_NAME}"
+  echo "  systemctl status ${APP_NAME}-backup.timer"
+  echo "  /var/backups/${APP_NAME}/"
+  echo "  nginx -t && systemctl reload nginx"
+}
+
+main "$@"
