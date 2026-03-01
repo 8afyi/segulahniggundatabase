@@ -101,6 +101,11 @@ img {
   font-weight: 700;
 }
 
+.site-footer-separator {
+  color: var(--muted);
+  margin: 0 0.5rem;
+}
+
 .brand-row {
   align-items: center;
   display: flex;

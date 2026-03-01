@@ -6,5 +6,5 @@ uploads/audio/
 npm-debug.log*
 .DS_Store
 Project_Description.md
-todo.md
 scripts/deploy-production-ubuntu.sh
+client_secret_*.json

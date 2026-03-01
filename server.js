@@ -833,6 +833,14 @@ app.get("/faq", (req, res) => {
   return res.render("public/faq");
 });
 
+app.get("/privacy-policy", (req, res) => {
+  return res.render("public/privacy-policy");
+});
+
+app.get("/terms-of-service", (req, res) => {
+  return res.render("public/terms-of-service");
+});
+
 app.get(/^\/niggunim\/(\d+)(?:-([^/]+))?$/, (req, res) => {
   const niggunId = Number(req.params[0]);
   const requestedSlug = sanitizeText(req.params[1] || "").toLowerCase();
