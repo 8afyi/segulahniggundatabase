@@ -91,6 +91,10 @@ sudo systemctl list-timers | grep segulah-niggun-database-backup
   - Debian 13: `scripts/deploy-production-debian13.sh`
 - Set a strong `SESSION_SECRET`
 - In production, startup fails if `SESSION_SECRET` is missing, too short, or left at the development fallback value
+- For production (`systemd` deploy), set Google vars in `/etc/segulah-niggun-database.env`:
+  - `GOOGLE_CLIENT_ID`
+  - `GOOGLE_CLIENT_SECRET`
+  - `GOOGLE_CALLBACK_URL` (usually `https://<your-domain>/auth/google/callback`)
 - Keep Redis local-only (`127.0.0.1`) unless you intentionally externalize it
 - Run behind Nginx/Caddy with TLS
 - For Cloudflare, use Full (strict) TLS mode and keep `TRUST_PROXY=1`

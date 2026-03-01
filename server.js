@@ -196,8 +196,14 @@ if (googleAuthEnabled) {
     )
   );
 } else {
+  const envClientIdSet = Boolean(sanitizeText(process.env.GOOGLE_CLIENT_ID || ""));
+  const envClientSecretSet = Boolean(sanitizeText(process.env.GOOGLE_CLIENT_SECRET || ""));
+  const envClientSecretFile = sanitizeText(process.env.GOOGLE_CLIENT_SECRET_FILE || "");
   console.warn(
-    "Google public sign-in is disabled. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET (or add client_secret_*.json)."
+    `Google public sign-in is disabled. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET (or add client_secret_*.json). ` +
+      `Detected: GOOGLE_CLIENT_ID=${envClientIdSet ? "set" : "missing"}, ` +
+      `GOOGLE_CLIENT_SECRET=${envClientSecretSet ? "set" : "missing"}, ` +
+      `GOOGLE_CLIENT_SECRET_FILE=${envClientSecretFile || "unset"}.`
   );
 }
 

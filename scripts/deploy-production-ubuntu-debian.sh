@@ -261,13 +261,29 @@ ensure_redis_service() {
 write_env_file() {
   local env_file="/etc/${APP_NAME}.env"
   local session_secret=""
+  local google_client_id=""
+  local google_client_secret=""
+  local google_callback_url=""
+  local google_client_secret_file=""
 
   if [[ -f "$env_file" ]]; then
     session_secret="$(grep -E '^SESSION_SECRET=' "$env_file" | head -n1 | cut -d= -f2- || true)"
+    google_client_id="$(grep -E '^GOOGLE_CLIENT_ID=' "$env_file" | head -n1 | cut -d= -f2- || true)"
+    google_client_secret="$(grep -E '^GOOGLE_CLIENT_SECRET=' "$env_file" | head -n1 | cut -d= -f2- || true)"
+    google_callback_url="$(grep -E '^GOOGLE_CALLBACK_URL=' "$env_file" | head -n1 | cut -d= -f2- || true)"
+    google_client_secret_file="$(grep -E '^GOOGLE_CLIENT_SECRET_FILE=' "$env_file" | head -n1 | cut -d= -f2- || true)"
   fi
 
   if [[ -z "$session_secret" ]]; then
     session_secret="$(openssl rand -hex 48)"
+  fi
+
+  if [[ -z "$google_callback_url" ]]; then
+    if [[ -n "$DOMAIN" ]]; then
+      google_callback_url="https://${DOMAIN}/auth/google/callback"
+    else
+      google_callback_url="/auth/google/callback"
+    fi
   fi
 
   cat > "$env_file" <<ENV
@@ -282,6 +298,10 @@ LOGIN_FAILURE_LIMIT=5
 LOGIN_FAILURE_WINDOW_MINUTES=15
 LOGIN_LOCKOUT_MINUTES=15
 LOGIN_RATE_LIMIT_MAX=20
+GOOGLE_CLIENT_ID=${google_client_id}
+GOOGLE_CLIENT_SECRET=${google_client_secret}
+GOOGLE_CALLBACK_URL=${google_callback_url}
+GOOGLE_CLIENT_SECRET_FILE=${google_client_secret_file}
 ENV
 
   chmod 0600 "$env_file"
