@@ -10,8 +10,10 @@
   <body>
     <div class="site-shell">
       <%- include("../partials/site-header", {
-        headerAction: { type: "link", href: "/admin/login", label: "Login" },
-        headerMetaText: "Niggun detail card and audio playback."
+        headerAction: publicHeaderAction,
+        headerMetaText: publicViewerEmail
+          ? `Signed in as ${publicViewerEmail}. Niggun detail card and audio playback.`
+          : "Niggun detail card and audio playback."
       }) %>
 
       <main class="wrap shell-main">
@@ -21,10 +23,13 @@
         <article class="panel detail-card">
           <h2><%= niggun.title %></h2>
 
-                    <div>
-            <audio controls preload="metadata" src="/media/<%= niggun.audioPath %>"></audio>
-
-          </div>
+          <% if (niggun.audioPath) { %>
+            <div>
+              <audio controls preload="metadata" src="/media/<%= niggun.audioPath %>"></audio>
+            </div>
+          <% } else { %>
+            <p class="draft-pill">DRAFT - audio has not been uploaded yet.</p>
+          <% } %>
 
 
           <p>
@@ -63,6 +68,19 @@
           <% if (niggun.notes) { %>
             <div>
               <p><b>Notes:</b> <%= niggun.notes %></p>
+            </div>
+          <% } %>
+
+          <% if (niggun.scriptureRefs && niggun.scriptureRefs.length) { %>
+            <div>
+              <h3>Related Texts (Sefaria)</h3>
+              <ul>
+                <% for (const scriptureRef of niggun.scriptureRefs) { %>
+                  <li>
+                    <a href="<%= scriptureRef.sefariaUrl %>" target="_blank" rel="noreferrer noopener"><%= scriptureRef.reference %></a>
+                  </li>
+                <% } %>
+              </ul>
             </div>
           <% } %>
 

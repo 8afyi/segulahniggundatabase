@@ -133,14 +133,27 @@
               ><%= niggun.lyrics %></textarea>
             </label>
 
+            <label>
+              Scripture References (optional, one per line or comma-separated)
+              <textarea
+                name="scriptureRefs"
+                rows="4"
+                placeholder="Psalm 150:1-6&#10;Exodus 15:1"
+              ><%= (niggun.scriptureRefs || []).map((item) => item.reference).join('\n') %></textarea>
+            </label>
+
             <div class="panel">
               <h3>Current Audio</h3>
-              <audio controls preload="metadata" src="/media/<%= niggun.audioPath %>"></audio>
-              <% if (niggun.originalFilename) { %>
-                <p><small>Source file: <%= niggun.originalFilename %></small></p>
-              <% } %>
-              <% if (niggun.audioSourceUrl) { %>
-                <p><small>Source URL: <%= niggun.audioSourceUrl %></small></p>
+              <% if (niggun.audioPath) { %>
+                <audio controls preload="metadata" src="/media/<%= niggun.audioPath %>"></audio>
+                <% if (niggun.originalFilename) { %>
+                  <p><small>Source file: <%= niggun.originalFilename %></small></p>
+                <% } %>
+                <% if (niggun.audioSourceUrl) { %>
+                  <p><small>Source URL: <%= niggun.audioSourceUrl %></small></p>
+                <% } %>
+              <% } else { %>
+                <p class="draft-pill">DRAFT - no audio uploaded yet.</p>
               <% } %>
             </div>
 
@@ -154,7 +167,7 @@
               <input type="url" name="audioUrl" placeholder="https://example.com/song.mp3" />
             </label>
 
-            <p class="muted">Leave both audio fields blank to keep the current audio file.</p>
+            <p class="muted">Leave both audio fields blank to keep the current audio status. Drafts become public after audio is added.</p>
 
             <div class="action-row">
               <button type="submit">Update Niggun</button>

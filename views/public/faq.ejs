@@ -10,8 +10,10 @@
   <body>
     <div class="site-shell">
       <%- include("../partials/site-header", {
-        headerAction: { type: "link", href: "/admin/login", label: "Login" },
-        headerMetaText: "Frequently asked questions."
+        headerAction: publicHeaderAction,
+        headerMetaText: publicViewerEmail
+          ? `Signed in as ${publicViewerEmail}. Frequently asked questions.`
+          : "Frequently asked questions."
       }) %>
 
       <main class="wrap shell-main">

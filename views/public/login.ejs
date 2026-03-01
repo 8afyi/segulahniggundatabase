@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sign In | Segulah Niggun Database</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <div class="site-shell">
+      <%- include("../partials/site-header", {
+        headerAction: { type: "link", href: "/", label: "Browse" },
+        headerMetaText: "Sign in with Google to access the public catalog."
+      }) %>
+
+      <main class="wrap shell-main top-space narrow">
+        <%- include('../partials/flash', { flash: flash }) %>
+
+        <section class="panel">
+          <h1>Public Sign In</h1>
+          <p>Use your Google account to access the niggun catalog.</p>
+
+          <% if (googleAuthEnabled) { %>
+            <p>
+              <a href="/auth/google?returnTo=<%= encodeURIComponent(returnTo || '/') %>" class="button-secondary">
+                Sign in with Google
+              </a>
+            </p>
+          <% } else { %>
+            <p class="muted">
+              Google sign-in is currently unavailable. Set Google OAuth credentials on the server.
+            </p>
+          <% } %>
+        </section>
+      </main>
+
+      <%- include('../partials/site-footer') %>
+    </div>
+  </body>
+</html>

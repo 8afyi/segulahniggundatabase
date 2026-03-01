@@ -93,6 +93,15 @@ function initializeSchema() {
       FOREIGN KEY (prayer_time_id) REFERENCES prayer_times(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS niggun_scripture_refs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      niggun_id INTEGER NOT NULL,
+      reference TEXT NOT NULL,
+      sefaria_url TEXT NOT NULL,
+      position INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (niggun_id) REFERENCES niggunim(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS login_security (
       key_type TEXT NOT NULL,
       key_value TEXT NOT NULL,
@@ -103,13 +112,25 @@ function initializeSchema() {
       PRIMARY KEY (key_type, key_value)
     );
 
+    CREATE TABLE IF NOT EXISTS public_google_users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      google_sub TEXT NOT NULL UNIQUE,
+      email TEXT NOT NULL COLLATE NOCASE,
+      display_name TEXT,
+      picture_url TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_login_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_niggunim_tempo ON niggunim(tempo);
     CREATE INDEX IF NOT EXISTS idx_niggunim_key ON niggunim(musical_key);
     CREATE INDEX IF NOT EXISTS idx_niggun_singers_singer ON niggun_singers(singer_id);
     CREATE INDEX IF NOT EXISTS idx_niggun_authors_author ON niggun_authors(author_id);
     CREATE INDEX IF NOT EXISTS idx_niggun_occasions_occasion ON niggun_occasions(occasion_id);
     CREATE INDEX IF NOT EXISTS idx_niggun_prayers_prayer_time ON niggun_prayer_times(prayer_time_id);
+    CREATE INDEX IF NOT EXISTS idx_niggun_scripture_refs_niggun ON niggun_scripture_refs(niggun_id, position, id);
     CREATE INDEX IF NOT EXISTS idx_login_security_locked_until ON login_security(locked_until);
+    CREATE INDEX IF NOT EXISTS idx_public_google_users_email ON public_google_users(email);
   `);
 
   const niggunColumns = new Set(
@@ -124,7 +145,20 @@ function initializeSchema() {
   if (!niggunColumns.has("meter")) {
     db.exec("ALTER TABLE niggunim ADD COLUMN meter TEXT");
   }
+  if (!niggunColumns.has("publication_status")) {
+    db.exec("ALTER TABLE niggunim ADD COLUMN publication_status TEXT NOT NULL DEFAULT 'published'");
+  }
   db.exec("CREATE INDEX IF NOT EXISTS idx_niggunim_meter ON niggunim(meter)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_niggunim_publication_status ON niggunim(publication_status)");
+  db.exec(`
+    UPDATE niggunim
+       SET publication_status = CASE
+         WHEN TRIM(COALESCE(audio_path, '')) = '' THEN 'draft'
+         ELSE 'published'
+       END
+     WHERE publication_status IS NULL
+        OR TRIM(publication_status) NOT IN ('draft', 'published')
+  `);
 
   try {
     db.exec(`
@@ -333,11 +367,13 @@ function toNiggunRecord(row) {
     audioSourceUrl: row.audioSourceUrl || "",
     originalFilename: row.originalFilename || "",
     mimeType: row.mimeType || "",
+    publicationStatus: row.publicationStatus || "published",
     createdAt: row.createdAt,
     singers: splitCsv(row.singersCsv),
     authors: splitCsv(row.authorsCsv),
     occasions: splitCsv(row.occasionsCsv),
-    prayerTimes: splitCsv(row.prayerTimesCsv)
+    prayerTimes: splitCsv(row.prayerTimesCsv),
+    scriptureRefs: []
   };
 }
 
@@ -403,6 +439,65 @@ function updateUserPassword(userId, passwordHash) {
        WHERE id = ?`
     )
     .run(passwordHash, userId).changes;
+}
+
+function upsertPublicGoogleUser(payload) {
+  if (!payload || !payload.googleSub || !payload.email) {
+    throw new Error("Google user payload requires googleSub and email.");
+  }
+
+  db.prepare(
+    `INSERT INTO public_google_users (
+      google_sub,
+      email,
+      display_name,
+      picture_url,
+      last_login_at
+    )
+    VALUES (?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(google_sub)
+    DO UPDATE SET
+      email = excluded.email,
+      display_name = excluded.display_name,
+      picture_url = excluded.picture_url,
+      last_login_at = datetime('now')`
+  ).run(payload.googleSub, payload.email, payload.displayName || null, payload.pictureUrl || null);
+
+  return (
+    db
+      .prepare(
+        `SELECT
+          id,
+          google_sub AS googleSub,
+          email,
+          display_name AS displayName,
+          picture_url AS pictureUrl,
+          created_at AS createdAt,
+          last_login_at AS lastLoginAt
+         FROM public_google_users
+         WHERE google_sub = ?`
+      )
+      .get(payload.googleSub) || null
+  );
+}
+
+function getPublicGoogleUserById(userId) {
+  return (
+    db
+      .prepare(
+        `SELECT
+          id,
+          google_sub AS googleSub,
+          email,
+          display_name AS displayName,
+          picture_url AS pictureUrl,
+          created_at AS createdAt,
+          last_login_at AS lastLoginAt
+         FROM public_google_users
+         WHERE id = ?`
+      )
+      .get(userId) || null
+  );
 }
 
 function getLoginSecurityRecord(keyType, keyValue) {
@@ -516,6 +611,44 @@ function cleanupUnusedLookupTables() {
   ).run();
 }
 
+function listNiggunScriptureRefs(niggunId) {
+  return db
+    .prepare(
+      `SELECT
+        reference,
+        sefaria_url AS sefariaUrl
+       FROM niggun_scripture_refs
+       WHERE niggun_id = ?
+       ORDER BY position ASC, id ASC`
+    )
+    .all(niggunId);
+}
+
+function replaceNiggunScriptureRefs(niggunId, scriptureRefs = []) {
+  db.prepare("DELETE FROM niggun_scripture_refs WHERE niggun_id = ?").run(niggunId);
+  if (!Array.isArray(scriptureRefs) || scriptureRefs.length === 0) {
+    return;
+  }
+
+  const insertRef = db.prepare(
+    `INSERT INTO niggun_scripture_refs (
+      niggun_id,
+      reference,
+      sefaria_url,
+      position
+    )
+    VALUES (?, ?, ?, ?)`
+  );
+
+  scriptureRefs.forEach((scriptureRef, index) => {
+    if (!scriptureRef || !scriptureRef.reference || !scriptureRef.sefariaUrl) {
+      return;
+    }
+
+    insertRef.run(niggunId, scriptureRef.reference, scriptureRef.sefariaUrl, index);
+  });
+}
+
 function insertNiggunLinks(niggunId, payload) {
   const insertSingerLink = db.prepare(
     "INSERT INTO niggun_singers (niggun_id, singer_id) VALUES (?, ?)"
@@ -561,12 +694,13 @@ const createNiggunTxn = db.transaction((payload) => {
         tempo,
         musical_key,
         meter,
+        publication_status,
         audio_path,
         audio_source_url,
         original_filename,
         mime_type
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       payload.title,
@@ -575,6 +709,7 @@ const createNiggunTxn = db.transaction((payload) => {
       payload.tempo || null,
       payload.mode || null,
       payload.meter || null,
+      payload.publicationStatus || "published",
       payload.audioPath,
       payload.audioSourceUrl || null,
       payload.originalFilename || null,
@@ -583,6 +718,7 @@ const createNiggunTxn = db.transaction((payload) => {
 
   const niggunId = niggunResult.lastInsertRowid;
   insertNiggunLinks(niggunId, payload);
+  replaceNiggunScriptureRefs(niggunId, payload.scriptureRefs || []);
   upsertNiggunSearchRecord(niggunId);
 
   return niggunId;
@@ -613,6 +749,7 @@ const updateNiggunTxn = db.transaction((payload) => {
          tempo = ?,
          musical_key = ?,
          meter = ?,
+         publication_status = ?,
          audio_path = ?,
          audio_source_url = ?,
          original_filename = ?,
@@ -625,6 +762,7 @@ const updateNiggunTxn = db.transaction((payload) => {
     payload.tempo || null,
     payload.mode || null,
     payload.meter || null,
+    payload.publicationStatus || "published",
     payload.audioPath,
     payload.audioSourceUrl || null,
     payload.originalFilename || null,
@@ -638,6 +776,7 @@ const updateNiggunTxn = db.transaction((payload) => {
   db.prepare("DELETE FROM niggun_prayer_times WHERE niggun_id = ?").run(payload.id);
 
   insertNiggunLinks(payload.id, payload);
+  replaceNiggunScriptureRefs(payload.id, payload.scriptureRefs || []);
   upsertNiggunSearchRecord(payload.id);
   cleanupUnusedLookupTables();
 
@@ -672,9 +811,13 @@ function toFtsMatchQuery(rawSearchQuery) {
     .join(" AND ");
 }
 
-function buildNiggunWhereClause(filters = {}) {
+function buildNiggunWhereClause(filters = {}, options = {}) {
   const conditions = [];
   const params = [];
+
+  if (!options.includeDrafts) {
+    conditions.push("n.publication_status = 'published'");
+  }
 
   if (filters.searchQuery) {
     const ftsQuery = toFtsMatchQuery(filters.searchQuery);
@@ -776,8 +919,8 @@ function buildNiggunWhereClause(filters = {}) {
   };
 }
 
-function countNiggunim(filters = {}) {
-  const { whereClause, params } = buildNiggunWhereClause(filters);
+function countNiggunim(filters = {}, options = {}) {
+  const { whereClause, params } = buildNiggunWhereClause(filters, options);
   const row = db
     .prepare(
       `SELECT COUNT(*) AS count
@@ -804,7 +947,7 @@ function resolveSortClause(sortKey) {
 }
 
 function listNiggunim(filters = {}, options = {}) {
-  const { whereClause, params } = buildNiggunWhereClause(filters);
+  const { whereClause, params } = buildNiggunWhereClause(filters, options);
   const sortClause = resolveSortClause(options.sortKey || "newest");
 
   const hasLimit = Number.isInteger(options.limit) && options.limit > 0;
@@ -819,6 +962,7 @@ function listNiggunim(filters = {}, options = {}) {
       n.tempo,
       n.musical_key AS mode,
       n.meter AS meter,
+      n.publication_status AS publicationStatus,
       n.audio_path AS audioPath,
       n.audio_source_url AS audioSourceUrl,
       n.original_filename AS originalFilename,
@@ -851,7 +995,9 @@ function listNiggunim(filters = {}, options = {}) {
   return rows.map(toNiggunRecord);
 }
 
-function getNiggunById(niggunId) {
+function getNiggunById(niggunId, options = {}) {
+  const includeDrafts = Boolean(options.includeDrafts);
+  const whereClause = includeDrafts ? "WHERE n.id = ?" : "WHERE n.id = ? AND n.publication_status = 'published'";
   const row = db
     .prepare(
       `
@@ -863,6 +1009,7 @@ function getNiggunById(niggunId) {
         n.tempo,
         n.musical_key AS mode,
         n.meter AS meter,
+        n.publication_status AS publicationStatus,
         n.audio_path AS audioPath,
         n.audio_source_url AS audioSourceUrl,
         n.original_filename AS originalFilename,
@@ -881,13 +1028,19 @@ function getNiggunById(niggunId) {
       LEFT JOIN occasions o ON o.id = no.occasion_id
       LEFT JOIN niggun_prayer_times npt ON npt.niggun_id = n.id
       LEFT JOIN prayer_times pt ON pt.id = npt.prayer_time_id
-      WHERE n.id = ?
+      ${whereClause}
       GROUP BY n.id
       `
     )
     .get(niggunId);
 
-  return toNiggunRecord(row);
+  const niggun = toNiggunRecord(row);
+  if (!niggun) {
+    return null;
+  }
+
+  niggun.scriptureRefs = listNiggunScriptureRefs(niggun.id);
+  return niggun;
 }
 
 function listSingers() {
@@ -973,6 +1126,8 @@ module.exports = {
   listUsers,
   deleteUser,
   updateUserPassword,
+  upsertPublicGoogleUser,
+  getPublicGoogleUserById,
   getLoginSecurityRecord,
   upsertLoginSecurityRecord,
   clearLoginSecurityRecord,

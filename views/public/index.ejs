@@ -11,8 +11,10 @@
   <body>
     <div class="site-shell">
       <%- include("../partials/site-header", {
-        headerAction: { type: "link", href: "/admin/login", label: "Login" },
-        headerMetaText: "Browse niggunim used at Segulah!"
+        headerAction: publicHeaderAction,
+        headerMetaText: publicViewerEmail
+          ? `Signed in as ${publicViewerEmail}. Browse niggunim used at Segulah!`
+          : "Browse niggunim used at Segulah!"
       }) %>
 
       <main class="wrap shell-main">

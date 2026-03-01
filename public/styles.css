@@ -504,6 +504,31 @@ button:focus-visible {
   text-decoration: none;
 }
 
+.draft-pill,
+.published-pill {
+  border-radius: 999px;
+  display: inline-block;
+  font-family: sans-serif;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  line-height: 1.1;
+  padding: 0.25rem 0.55rem;
+  text-transform: uppercase;
+}
+
+.draft-pill {
+  background: #fff4d7;
+  border: 1px solid #e2c26f;
+  color: #6b4c00;
+}
+
+.published-pill {
+  background: #e7f6eb;
+  border: 1px solid #94d3a2;
+  color: #1e5f33;
+}
+
 .audio-preview-cell {
   white-space: nowrap;
 }

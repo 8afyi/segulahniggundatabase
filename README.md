@@ -12,15 +12,19 @@
 3. Session store choice:
    - local default is `SESSION_STORE=memory` (no Redis required)
    - if you want Redis-backed sessions locally, set `SESSION_STORE=redis`
-4. Optional: start Redis for local parity with production:
+4. Configure Google OAuth for public sign-in:
+   - set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env`
+   - set `GOOGLE_CALLBACK_URL` (default: `/auth/google/callback`)
+   - if needed, you can point `GOOGLE_CLIENT_SECRET_FILE` to a downloaded Google client secret JSON
+5. Optional: start Redis for local parity with production:
    ```bash
    sudo systemctl start redis-server
    ```
-5. Start server:
+6. Start server:
    ```bash
    npm start
    ```
-6. Open:
+7. Open:
    - Public site: `http://localhost:3000`
    - First-run admin setup: `http://localhost:3000/admin/setup`
 

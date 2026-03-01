@@ -121,14 +121,25 @@
               </label>
 
               <label>
-                Audio file upload (max 20MB)
+                Scripture References (optional, one per line or comma-separated)
+                <textarea
+                  name="scriptureRefs"
+                  rows="4"
+                  placeholder="Psalm 150:1-6&#10;Exodus 15:1"
+                ></textarea>
+              </label>
+
+              <label>
+                Audio file upload (optional, max 20MB)
                 <input type="file" name="audioFile" accept="audio/*" />
               </label>
 
               <label>
-                OR audio URL (http/https)
+                OR audio URL (optional, http/https)
                 <input type="url" name="audioUrl" placeholder="https://example.com/song.mp3" />
               </label>
+
+              <p class="muted">If you submit without audio, the niggun is saved as a DRAFT and hidden from public view.</p>
 
               <button type="submit">Add Niggun</button>
             </form>
@@ -294,6 +305,7 @@
                       <th scope="col">Tempo</th>
                       <th scope="col">Mode</th>
                       <th scope="col">Meter</th>
+                      <th scope="col">Status</th>
                       <th scope="col">Uploaded</th>
                       <th scope="col">Action</th>
                     </tr>
@@ -329,6 +341,13 @@
                         <td><%= niggun.tempo || 'N/A' %></td>
                         <td><%= niggun.mode || 'N/A' %></td>
                         <td><%= niggun.meter || 'N/A' %></td>
+                        <td>
+                          <% if (niggun.publicationStatus === 'draft') { %>
+                            <span class="draft-pill">DRAFT</span>
+                          <% } else { %>
+                            <span class="published-pill">Published</span>
+                          <% } %>
+                        </td>
                         <td><%= niggun.createdAtLabel || 'N/A' %></td>
                         <td>
                           <a

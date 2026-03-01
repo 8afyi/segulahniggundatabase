@@ -1,7 +1,10 @@
 const crypto = require("crypto");
+const fs = require("fs");
 const path = require("path");
 const express = require("express");
 const session = require("express-session");
+const passport = require("passport");
+const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const { RedisStore } = require("connect-redis");
 const { createClient } = require("redis");
 const rateLimit = require("express-rate-limit");
@@ -19,6 +22,8 @@ const {
   listUsers,
   deleteUser,
   updateUserPassword,
+  upsertPublicGoogleUser,
+  getPublicGoogleUserById,
   getLoginSecurityRecord,
   upsertLoginSecurityRecord,
   clearLoginSecurityRecord,
@@ -115,6 +120,87 @@ function resolveSessionSecret() {
   return configuredSecret;
 }
 
+function readGoogleClientSecretFile() {
+  const configuredPath = sanitizeText(process.env.GOOGLE_CLIENT_SECRET_FILE || "");
+  const candidatePaths = [];
+
+  if (configuredPath) {
+    candidatePaths.push(path.isAbsolute(configuredPath) ? configuredPath : path.join(projectRoot, configuredPath));
+  } else {
+    const localClientSecretFile = fs
+      .readdirSync(projectRoot, { withFileTypes: true })
+      .find((entry) => entry.isFile() && /^client_secret_.*\.json$/i.test(entry.name));
+    if (localClientSecretFile) {
+      candidatePaths.push(path.join(projectRoot, localClientSecretFile.name));
+    }
+  }
+
+  for (const candidatePath of candidatePaths) {
+    try {
+      const raw = fs.readFileSync(candidatePath, "utf8");
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.web && parsed.web.client_id && parsed.web.client_secret) {
+        return {
+          clientId: sanitizeText(parsed.web.client_id),
+          clientSecret: sanitizeText(parsed.web.client_secret)
+        };
+      }
+    } catch (error) {
+      // Ignore and continue through candidate paths.
+    }
+  }
+
+  return null;
+}
+
+function resolveGoogleAuthConfig() {
+  const envClientId = sanitizeText(process.env.GOOGLE_CLIENT_ID || "");
+  const envClientSecret = sanitizeText(process.env.GOOGLE_CLIENT_SECRET || "");
+  const fileSecrets = readGoogleClientSecretFile();
+  const clientId = envClientId || fileSecrets?.clientId || "";
+  const clientSecret = envClientSecret || fileSecrets?.clientSecret || "";
+  const callbackUrl = sanitizeText(process.env.GOOGLE_CALLBACK_URL || "/auth/google/callback");
+
+  return {
+    clientId,
+    clientSecret,
+    callbackUrl
+  };
+}
+
+const googleAuthConfig = resolveGoogleAuthConfig();
+const googleAuthEnabled = Boolean(googleAuthConfig.clientId && googleAuthConfig.clientSecret);
+
+if (googleAuthEnabled) {
+  passport.use(
+    new GoogleStrategy(
+      {
+        clientID: googleAuthConfig.clientId,
+        clientSecret: googleAuthConfig.clientSecret,
+        callbackURL: googleAuthConfig.callbackUrl
+      },
+      (accessToken, refreshToken, profile, done) => {
+        const primaryEmail = profile?.emails?.find((item) => item && item.value)?.value || "";
+        const normalizedEmail = sanitizeText(primaryEmail).toLowerCase();
+        if (!normalizedEmail) {
+          return done(null, false);
+        }
+
+        return done(null, {
+          googleSub: sanitizeText(profile?.id || ""),
+          email: normalizedEmail,
+          displayName: sanitizeText(profile?.displayName || ""),
+          pictureUrl: sanitizeText(profile?.photos?.[0]?.value || "")
+        });
+      }
+    )
+  );
+} else {
+  console.warn(
+    "Google public sign-in is disabled. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET (or add client_secret_*.json)."
+  );
+}
+
 app.set("view engine", "ejs");
 app.set("views", path.join(projectRoot, "views"));
 
@@ -205,6 +291,7 @@ if (sessionStore) {
   sessionOptions.store = sessionStore;
 }
 app.use(session(sessionOptions));
+app.use(passport.initialize());
 
 function setFlash(req, type, message) {
   req.session.flash = { type, message };
@@ -290,6 +377,18 @@ app.use((req, res, next) => {
     }
   } else {
     res.locals.currentUser = null;
+  }
+
+  if (req.session.publicGoogleUserId) {
+    const publicGoogleUser = getPublicGoogleUserById(req.session.publicGoogleUserId);
+    if (publicGoogleUser) {
+      res.locals.publicGoogleUser = publicGoogleUser;
+    } else {
+      delete req.session.publicGoogleUserId;
+      res.locals.publicGoogleUser = null;
+    }
+  } else {
+    res.locals.publicGoogleUser = null;
   }
 
   next();
@@ -561,6 +660,110 @@ function normalizeAdminReturnTo(rawReturnTo, fallback = "/admin") {
   return `${parsed.pathname}${parsed.search}`;
 }
 
+function normalizePublicReturnTo(rawReturnTo, fallback = "/") {
+  const cleaned = sanitizeText(rawReturnTo || "");
+  if (!cleaned) {
+    return fallback;
+  }
+
+  if (cleaned.startsWith("//")) {
+    return fallback;
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(cleaned, "http://localhost");
+  } catch (error) {
+    return fallback;
+  }
+
+  if (parsed.origin !== "http://localhost") {
+    return fallback;
+  }
+
+  const pathname = parsed.pathname || "/";
+  if (pathname.startsWith("/admin") || pathname.startsWith("/auth/google")) {
+    return fallback;
+  }
+
+  return `${pathname}${parsed.search}`;
+}
+
+function canAccessPublicCatalog(req) {
+  return Boolean(req.session.userId || req.session.publicGoogleUserId);
+}
+
+function requirePublicCatalogAccess(req, res, next) {
+  if (canAccessPublicCatalog(req)) {
+    return next();
+  }
+
+  const returnTo = normalizePublicReturnTo(req.originalUrl || req.url || "/", "/");
+  return res.redirect(
+    toPathWithQuery(
+      "/public/login",
+      buildQueryString({
+        returnTo
+      })
+    )
+  );
+}
+
+function buildPublicHeaderAction(req) {
+  if (req.session.userId) {
+    return { type: "link", href: "/admin", label: "Admin" };
+  }
+
+  if (req.session.publicGoogleUserId) {
+    return { type: "link", href: "/public/logout", label: "Sign out" };
+  }
+
+  return { type: "link", href: "/public/login", label: "Sign in with Google" };
+}
+
+function toSefariaUrl(reference) {
+  const cleanedReference = sanitizeText(reference || "").replace(/\s+/g, " ");
+  if (!cleanedReference) {
+    return "";
+  }
+
+  return `https://www.sefaria.org/${encodeURIComponent(cleanedReference)}`;
+}
+
+function parseScriptureReferences(rawInput) {
+  if (typeof rawInput !== "string") {
+    return [];
+  }
+
+  const dedup = new Map();
+  const normalizedInput = rawInput.replace(/\\n/g, "\n");
+  const rawItems = normalizedInput.split(/[\r\n,]+/);
+
+  for (const rawItem of rawItems) {
+    const cleanedReference = sanitizeText(rawItem);
+    if (!cleanedReference) {
+      continue;
+    }
+
+    const dedupKey = cleanedReference.toLowerCase();
+    if (dedup.has(dedupKey)) {
+      continue;
+    }
+
+    const sefariaUrl = toSefariaUrl(cleanedReference);
+    if (!sefariaUrl) {
+      continue;
+    }
+
+    dedup.set(dedupKey, {
+      reference: cleanedReference,
+      sefariaUrl
+    });
+  }
+
+  return Array.from(dedup.values());
+}
+
 function buildAdminNavigation(activeKey) {
   return ADMIN_NAV_ITEMS.map((item) => ({
     ...item,
@@ -757,11 +960,12 @@ function renderPublicSearchPage(req, res, { isAdvancedSearch = false } = {}) {
     occasions: filters.occasions,
     prayerTimes: filters.prayerTimes
   };
-  const totalCount = countNiggunim(listFilters);
+  const totalCount = countNiggunim(listFilters, { includeDrafts: false });
   const pagination = buildPagination(totalCount, requestedPage, PUBLIC_PAGE_SIZE);
   const searchPath = isAdvancedSearch ? "/advanced-search" : "/";
 
   const niggunim = listNiggunim(listFilters, {
+    includeDrafts: false,
     sortKey,
     limit: PUBLIC_PAGE_SIZE,
     offset: pagination.offset
@@ -817,20 +1021,97 @@ function renderPublicSearchPage(req, res, { isAdvancedSearch = false } = {}) {
     occasionOptions: OCCASION_TAG_OPTIONS,
     prayerTimeOptions: PRAYER_TIME_TAG_OPTIONS,
     singers,
-    authors
+    authors,
+    publicHeaderAction: buildPublicHeaderAction(req),
+    publicViewerEmail: res.locals.publicGoogleUser ? res.locals.publicGoogleUser.email : ""
   });
 }
 
-app.get("/", (req, res) => {
+app.get("/public/login", (req, res) => {
+  const returnTo = normalizePublicReturnTo(req.query.returnTo, "/");
+  if (canAccessPublicCatalog(req)) {
+    return res.redirect(returnTo);
+  }
+
+  return res.render("public/login", {
+    returnTo,
+    googleAuthEnabled
+  });
+});
+
+app.get("/public/logout", (req, res) => {
+  delete req.session.publicGoogleUserId;
+  const returnTo = normalizePublicReturnTo(req.query.returnTo, "/public/login");
+  return res.redirect(returnTo);
+});
+
+app.get("/auth/google", (req, res, next) => {
+  const returnTo = normalizePublicReturnTo(req.query.returnTo, "/");
+  req.session.publicAuthReturnTo = returnTo;
+
+  if (!googleAuthEnabled) {
+    setFlash(req, "error", "Google sign-in is not configured.");
+    return res.redirect(toPathWithQuery("/public/login", buildQueryString({ returnTo })));
+  }
+
+  const handler = passport.authenticate("google", {
+    session: false,
+    scope: ["openid", "email", "profile"],
+    prompt: "select_account"
+  });
+
+  return handler(req, res, next);
+});
+
+app.get("/auth/google/callback", (req, res, next) => {
+  if (!googleAuthEnabled) {
+    setFlash(req, "error", "Google sign-in is not configured.");
+    return res.redirect("/public/login");
+  }
+
+  const handler = passport.authenticate("google", {
+    session: false,
+    failureRedirect: "/public/login"
+  });
+
+  return handler(req, res, next);
+}, (req, res) => {
+  if (!req.user || !req.user.googleSub || !req.user.email) {
+    setFlash(req, "error", "Google sign-in did not return an email address.");
+    return res.redirect("/public/login");
+  }
+
+  let publicGoogleUser = null;
+  try {
+    publicGoogleUser = upsertPublicGoogleUser(req.user);
+  } catch (error) {
+    console.error("Unable to persist Google public user:", error);
+  }
+
+  if (!publicGoogleUser) {
+    setFlash(req, "error", "Unable to complete sign-in.");
+    return res.redirect("/public/login");
+  }
+
+  req.session.publicGoogleUserId = publicGoogleUser.id;
+  const returnTo = normalizePublicReturnTo(req.session.publicAuthReturnTo, "/");
+  delete req.session.publicAuthReturnTo;
+  return res.redirect(returnTo);
+});
+
+app.get("/", requirePublicCatalogAccess, (req, res) => {
   return renderPublicSearchPage(req, res, { isAdvancedSearch: false });
 });
 
-app.get("/advanced-search", (req, res) => {
+app.get("/advanced-search", requirePublicCatalogAccess, (req, res) => {
   return renderPublicSearchPage(req, res, { isAdvancedSearch: true });
 });
 
-app.get("/faq", (req, res) => {
-  return res.render("public/faq");
+app.get("/faq", requirePublicCatalogAccess, (req, res) => {
+  return res.render("public/faq", {
+    publicHeaderAction: buildPublicHeaderAction(req),
+    publicViewerEmail: res.locals.publicGoogleUser ? res.locals.publicGoogleUser.email : ""
+  });
 });
 
 app.get("/privacy-policy", (req, res) => {
@@ -841,14 +1122,15 @@ app.get("/terms-of-service", (req, res) => {
   return res.render("public/terms-of-service");
 });
 
-app.get(/^\/niggunim\/(\d+)(?:-([^/]+))?$/, (req, res) => {
+app.get(/^\/niggunim\/(\d+)(?:-([^/]+))?$/, requirePublicCatalogAccess, (req, res) => {
   const niggunId = Number(req.params[0]);
   const requestedSlug = sanitizeText(req.params[1] || "").toLowerCase();
+  const includeDrafts = Boolean(req.session.userId);
   if (!Number.isInteger(niggunId) || niggunId <= 0) {
     return res.status(404).render("public/not-found");
   }
 
-  const niggun = getNiggunById(niggunId);
+  const niggun = getNiggunById(niggunId, { includeDrafts });
   if (!niggun) {
     return res.status(404).render("public/not-found");
   }
@@ -863,7 +1145,9 @@ app.get(/^\/niggunim\/(\d+)(?:-([^/]+))?$/, (req, res) => {
 
   return res.render("public/niggun", {
     niggun,
-    uploadedDateLabel
+    uploadedDateLabel,
+    publicHeaderAction: buildPublicHeaderAction(req),
+    publicViewerEmail: res.locals.publicGoogleUser ? res.locals.publicGoogleUser.email : ""
   });
 });
 
@@ -1023,12 +1307,13 @@ app.get("/admin/niggunim", requireAuth, (req, res) => {
     occasions: filters.occasions,
     prayerTimes: filters.prayerTimes
   };
-  const totalCount = countNiggunim(listFilters);
+  const totalCount = countNiggunim(listFilters, { includeDrafts: true });
   const pagination = buildPagination(totalCount, requestedPage, ADMIN_PAGE_SIZE);
 
   const singers = listSingers();
   const authors = listAuthors();
   const niggunim = listNiggunim(listFilters, {
+    includeDrafts: true,
     sortKey,
     limit: ADMIN_PAGE_SIZE,
     offset: pagination.offset
@@ -1221,6 +1506,7 @@ app.post("/admin/niggunim", requireAuth, uploadForCreate, requireCsrfToken, asyn
   const authors = parseCsvInput(req.body.authors || "");
   const occasions = parseMultiSelectInput(req.body.occasions, OCCASION_TAG_OPTIONS);
   const prayerTimes = parseMultiSelectInput(req.body.prayerTimes, PRAYER_TIME_TAG_OPTIONS);
+  const scriptureRefs = parseScriptureReferences(req.body.scriptureRefs || "");
   const audioUrlRaw = sanitizeText(req.body.audioUrl || "");
   const audioUrl = ensureHttpUrl(audioUrlRaw);
 
@@ -1285,15 +1571,11 @@ app.post("/admin/niggunim", requireAuth, uploadForCreate, requireCsrfToken, asyn
     return res.redirect(returnTo);
   }
 
-  if (!uploadedFile && !audioUrl) {
-    setFlash(req, "error", "Audio file is required (upload or URL).");
-    return res.redirect(returnTo);
-  }
-
   let storedFilename = "";
   let mimeType = "";
   let originalFilename = "";
   let audioSourceUrl = "";
+  let publicationStatus = "draft";
 
   try {
     if (uploadedFile) {
@@ -1307,12 +1589,16 @@ app.post("/admin/niggunim", requireAuth, uploadForCreate, requireCsrfToken, asyn
       storedFilename = uploadedFile.filename;
       mimeType = metadata.mimeType;
       originalFilename = metadata.originalFilename;
+      publicationStatus = "published";
     } else {
-      const downloaded = await downloadAudioFromUrl(audioUrl);
-      storedFilename = downloaded.storedFilename;
-      mimeType = downloaded.mimeType;
-      originalFilename = downloaded.originalFilename;
-      audioSourceUrl = audioUrl;
+      if (audioUrl) {
+        const downloaded = await downloadAudioFromUrl(audioUrl);
+        storedFilename = downloaded.storedFilename;
+        mimeType = downloaded.mimeType;
+        originalFilename = downloaded.originalFilename;
+        audioSourceUrl = audioUrl;
+        publicationStatus = "published";
+      }
     }
 
     createNiggun({
@@ -1326,20 +1612,26 @@ app.post("/admin/niggunim", requireAuth, uploadForCreate, requireCsrfToken, asyn
       authors,
       occasions,
       prayerTimes,
+      scriptureRefs,
+      publicationStatus,
       audioPath: storedFilename,
       audioSourceUrl,
       originalFilename,
       mimeType
     });
 
-    setFlash(req, "success", `Niggun \"${title}\" added.`);
+    if (publicationStatus === "draft") {
+      setFlash(req, "success", `Niggun \"${title}\" saved as draft (no audio uploaded yet).`);
+    } else {
+      setFlash(req, "success", `Niggun \"${title}\" added.`);
+    }
     return res.redirect(returnTo);
   } catch (error) {
-    if (storedFilename) {
+    if (storedFilename && (!uploadedFile || storedFilename !== uploadedFile.filename)) {
       removeAudioFile(storedFilename);
     }
 
-    if (uploadedFile) {
+    if (uploadedFile && uploadedFile.filename) {
       removeAudioFile(uploadedFile.filename);
     }
 
@@ -1357,7 +1649,7 @@ app.get("/admin/niggunim/:id/edit", requireAuth, (req, res) => {
     return res.redirect(returnTo);
   }
 
-  const niggun = getNiggunById(niggunId);
+  const niggun = getNiggunById(niggunId, { includeDrafts: true });
   if (!niggun) {
     setFlash(req, "error", "Niggun not found.");
     return res.redirect(returnTo);
@@ -1387,6 +1679,7 @@ app.post("/admin/niggunim/:id", requireAuth, uploadForEdit, requireCsrfToken, as
   const authors = parseCsvInput(req.body.authors || "");
   const occasions = parseMultiSelectInput(req.body.occasions, OCCASION_TAG_OPTIONS);
   const prayerTimes = parseMultiSelectInput(req.body.prayerTimes, PRAYER_TIME_TAG_OPTIONS);
+  const scriptureRefs = parseScriptureReferences(req.body.scriptureRefs || "");
   const audioUrlRaw = sanitizeText(req.body.audioUrl || "");
   const audioUrl = ensureHttpUrl(audioUrlRaw);
 
@@ -1400,7 +1693,7 @@ app.post("/admin/niggunim/:id", requireAuth, uploadForEdit, requireCsrfToken, as
     return res.redirect(returnTo);
   }
 
-  const existingNiggun = getNiggunById(niggunId);
+  const existingNiggun = getNiggunById(niggunId, { includeDrafts: true });
   if (!existingNiggun) {
     if (uploadedFile) {
       removeAudioFile(uploadedFile.filename);
@@ -1473,6 +1766,7 @@ app.post("/admin/niggunim/:id", requireAuth, uploadForEdit, requireCsrfToken, as
   let originalFilename = existingNiggun.originalFilename || "";
   let audioSourceUrl = existingNiggun.audioSourceUrl || "";
   let didReplaceAudio = false;
+  let publicationStatus = existingNiggun.publicationStatus || (storedFilename ? "published" : "draft");
 
   try {
     if (uploadedFile) {
@@ -1488,6 +1782,7 @@ app.post("/admin/niggunim/:id", requireAuth, uploadForEdit, requireCsrfToken, as
       originalFilename = metadata.originalFilename;
       audioSourceUrl = "";
       didReplaceAudio = true;
+      publicationStatus = "published";
     } else if (audioUrl) {
       const downloaded = await downloadAudioFromUrl(audioUrl);
       storedFilename = downloaded.storedFilename;
@@ -1495,6 +1790,11 @@ app.post("/admin/niggunim/:id", requireAuth, uploadForEdit, requireCsrfToken, as
       originalFilename = downloaded.originalFilename;
       audioSourceUrl = audioUrl;
       didReplaceAudio = true;
+      publicationStatus = "published";
+    }
+
+    if (!storedFilename) {
+      publicationStatus = "draft";
     }
 
     const updated = updateNiggun({
@@ -1509,6 +1809,8 @@ app.post("/admin/niggunim/:id", requireAuth, uploadForEdit, requireCsrfToken, as
       authors,
       occasions,
       prayerTimes,
+      scriptureRefs,
+      publicationStatus,
       audioPath: storedFilename,
       audioSourceUrl,
       originalFilename,
@@ -1534,7 +1836,12 @@ app.post("/admin/niggunim/:id", requireAuth, uploadForEdit, requireCsrfToken, as
       removeAudioFile(storedFilename);
     }
 
-    if (uploadedFile && uploadedFile.filename && uploadedFile.filename !== existingNiggun.audioPath) {
+    if (
+      uploadedFile &&
+      uploadedFile.filename &&
+      uploadedFile.filename !== existingNiggun.audioPath &&
+      uploadedFile.filename !== storedFilename
+    ) {
       removeAudioFile(uploadedFile.filename);
     }
 
@@ -1559,7 +1866,9 @@ app.post("/admin/niggunim/:id/delete", requireAuth, requireCsrfToken, (req, res)
     return res.redirect(returnTo);
   }
 
-  removeAudioFile(deleted.audioPath);
+  if (deleted.audioPath) {
+    removeAudioFile(deleted.audioPath);
+  }
   setFlash(req, "success", "Niggun deleted.");
   return res.redirect(returnTo);
 });
