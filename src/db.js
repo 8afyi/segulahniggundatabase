@@ -500,6 +500,23 @@ function getPublicGoogleUserById(userId) {
   );
 }
 
+function listPublicGoogleUsers() {
+  return db
+    .prepare(
+      `SELECT
+        id,
+        google_sub AS googleSub,
+        email,
+        display_name AS displayName,
+        picture_url AS pictureUrl,
+        created_at AS createdAt,
+        last_login_at AS lastLoginAt
+       FROM public_google_users
+       ORDER BY last_login_at DESC, email COLLATE NOCASE ASC`
+    )
+    .all();
+}
+
 function getLoginSecurityRecord(keyType, keyValue) {
   return (
     db
@@ -1128,6 +1145,7 @@ module.exports = {
   updateUserPassword,
   upsertPublicGoogleUser,
   getPublicGoogleUserById,
+  listPublicGoogleUsers,
   getLoginSecurityRecord,
   upsertLoginSecurityRecord,
   clearLoginSecurityRecord,

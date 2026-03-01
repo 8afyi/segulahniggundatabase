@@ -445,6 +445,35 @@
                 </tbody>
               </table>
             </div>
+
+            <h3>Google Public Users (<%= (publicGoogleUsers || []).length %>)</h3>
+            <% if (!publicGoogleUsers || publicGoogleUsers.length === 0) { %>
+              <p class="muted">No Google public users have signed in yet.</p>
+            <% } else { %>
+              <div class="table-wrap">
+                <table>
+                  <caption class="sr-only">Google public user listing</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Email</th>
+                      <th scope="col">Name</th>
+                      <th scope="col">First Seen</th>
+                      <th scope="col">Last Login</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <% for (const publicUser of publicGoogleUsers) { %>
+                      <tr>
+                        <td><%= publicUser.email %></td>
+                        <td><%= publicUser.displayName || 'N/A' %></td>
+                        <td><%= publicUser.createdAtLabel || 'N/A' %></td>
+                        <td><%= publicUser.lastLoginAtLabel || 'N/A' %></td>
+                      </tr>
+                    <% } %>
+                  </tbody>
+                </table>
+              </div>
+            <% } %>
           </section>
         <% } %>
       </main>

@@ -24,6 +24,7 @@ const {
   updateUserPassword,
   upsertPublicGoogleUser,
   getPublicGoogleUserById,
+  listPublicGoogleUsers,
   getLoginSecurityRecord,
   upsertLoginSecurityRecord,
   clearLoginSecurityRecord,
@@ -1368,11 +1369,17 @@ app.get("/admin/users", requireAuth, (req, res) => {
     ...user,
     createdAtLabel: toEasternDateLabel(user.createdAt)
   }));
+  const publicGoogleUsers = listPublicGoogleUsers().map((user) => ({
+    ...user,
+    createdAtLabel: toEasternDateLabel(user.createdAt),
+    lastLoginAtLabel: toEasternDateLabel(user.lastLoginAt)
+  }));
 
   return res.render("admin/dashboard", {
     adminSection: "users",
     adminNavigation: buildAdminNavigation("users"),
     users,
+    publicGoogleUsers,
     adminReturnTo: "/admin/users",
     tempoOptions: TEMPO_OPTIONS,
     modeOptions: MODE_OPTIONS,
